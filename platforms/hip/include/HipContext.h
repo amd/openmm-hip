@@ -1,5 +1,5 @@
-#ifndef OPENMM_HIP_CONTEXT_H_
-#define OPENMM_HIP_CONTEXT_H_
+#ifndef OPENMM_HIPCONTEXT_H_
+#define OPENMM_HIPCONTEXT_H_
 
 /* -------------------------------------------------------------------------- *
  *                                   OpenMM                                   *
@@ -206,6 +206,12 @@ public:
         return force;
     }
     /**
+     * The HIP platform does not use floating point force buffers, so this throws an exception.
+     */
+    ArrayInterface& getFloatForceBuffer() {
+        throw OpenMMException("HIP platform does not use floating point force buffers");
+    }
+    /**
      * Get the array which contains a contribution to each force represented as 64 bit fixed point.
      * This is a synonym for getForce().  It exists to satisfy the ComputeContext interface.
      */
@@ -293,9 +299,8 @@ public:
      * shared memory per thread.
      *
      * @param memory        the number of bytes of shared memory per thread
-     * @param preferShared  whether the kernel is set to prefer shared memory over cache
      */
-    int computeThreadBlockSize(double memory, bool preferShared=true) const;
+    int computeThreadBlockSize(double memory) const;
     /**
      * Set all elements of an array to 0.
      */
@@ -492,6 +497,15 @@ public:
         return *nonbonded;
     }
     /**
+     * Create a new NonbondedUtilities for use with this context.  This should be called
+     * only in unusual situations, when a Force needs its own NonbondedUtilities object
+     * separate from the standard one.  The caller is responsible for deleting the object
+     * when it is no longer needed.
+     */
+    HipNonbondedUtilities* createNonbondedUtilities() {
+        return new HipNonbondedUtilities(*this);
+    }
+    /**
      * This should be called by the Integrator from its own initialize() method.
      * It ensures all contexts are fully initialized.
      */
@@ -614,4 +628,4 @@ class OPENMM_EXPORT_COMMON HipContext::ForcePostComputation : public ComputeCont
 
 } // namespace OpenMM
 
-#endif /*OPENMM_HIP_CONTEXT_H_*/
+#endif /*OPENMM_HIPCONTEXT_H_*/

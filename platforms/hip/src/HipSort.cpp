@@ -60,7 +60,7 @@ HipSort::HipSort(HipContext& context, SortTrait* trait, unsigned int length) : c
     int maxSharedMem;
     hipDeviceGetAttribute(&maxSharedMem, hipDeviceAttributeMaxSharedMemoryPerBlock, context.getDevice());
     int maxLocalBuffer = (maxSharedMem/trait->getDataSize())/2;
-    int maxShortList = min(8192, max(maxLocalBuffer, HipContext::ThreadBlockSize*context.getNumThreadBlocks()));
+    int maxShortList = min(3000, max(maxLocalBuffer, HipContext::ThreadBlockSize*context.getNumThreadBlocks()));
     isShortList = (length <= maxShortList);
     for (rangeKernelSize = 1; rangeKernelSize*2 <= maxBlockSize; rangeKernelSize *= 2)
         ;

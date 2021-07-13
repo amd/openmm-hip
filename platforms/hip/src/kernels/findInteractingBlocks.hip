@@ -114,18 +114,19 @@ __device__ int saveSinglePairs(int x, int* atoms, tileflags* flags, int length, 
         int count = __TILEFLAGS_POPC(flags[i]);
         sum += (count <= MAX_BITS_FOR_PAIRS ? count : 0);
     }
-    sumBuffer[indexInWarp] = sum;
-    for (int step = 1; step < warpSize; step *= 2) {
-        int add = (indexInWarp >= step ? sumBuffer[indexInWarp-step] : 0);
-        sumBuffer[indexInWarp] += add;
+    for (int i = 1; i < warpSize; i *= 2) {
+        int n = SHFL(sum, indexInWarp - i);
+        if (indexInWarp >= i)
+            sum += n;
     }
-    int pairsToStore = sumBuffer[warpSize-1];
-    if (indexInWarp == 0)
-        pairStartIndex = atomicAdd(singlePairCount, pairsToStore);
-    int pairIndex = pairStartIndex + (indexInWarp > 0 ? sumBuffer[indexInWarp-1] : 0);
+    if (indexInWarp == warpSize - 1)
+        pairStartIndex = atomicAdd(singlePairCount,(unsigned int) sum);
+    SYNC_WARPS;
+    int prevSum = SHFL(sum, indexInWarp - 1);
+    int pairIndex = pairStartIndex + (indexInWarp > 0 ? prevSum : 0);
     for (int i = indexInWarp; i < length; i += warpSize) {
         int count = __TILEFLAGS_POPC(flags[i]);
-        if (count <= MAX_BITS_FOR_PAIRS && pairIndex+count < maxSinglePairs) {
+        if (count <= MAX_BITS_FOR_PAIRS && pairIndex+count <= maxSinglePairs) {
             tileflags f = flags[i];
             while (f != 0) {
                 singlePairs[pairIndex] = make_int2(atoms[i], x*TILE_SIZE+__TILEFLAGS_FFS(f)-1);
@@ -222,7 +223,7 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
     __shared__ int workgroupBuffer[BUFFER_SIZE*(GROUP_SIZE/warpSize)];
     __shared__ tileflags workgroupFlagsBuffer[BUFFER_SIZE*(GROUP_SIZE/warpSize)];
     __shared__ int warpExclusions[MAX_EXCLUSIONS*(GROUP_SIZE/warpSize)];
-    __shared__ real3 posBuffer[GROUP_SIZE];
+    __shared__ real4 posBuffer[GROUP_SIZE];
     __shared__ volatile int workgroupTileIndex[GROUP_SIZE/warpSize];
     __shared__ int worksgroupPairStartIndex[GROUP_SIZE/warpSize];
     int* sumBuffer = (int*) posBuffer; // Reuse the same buffer to save memory
@@ -242,7 +243,7 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
         real4 blockCenterX = sortedBlockCenter[block1];
         real4 blockSizeX = sortedBlockBoundingBox[block1];
         int neighborsInBuffer = 0;
-        real3 pos1 = trimTo3(posq[x*TILE_SIZE+indexInWarp]);
+        real4 pos1 = posq[x*TILE_SIZE+indexInWarp];
 #ifdef USE_PERIODIC
         const bool singlePeriodicCopy = (0.5f*periodicBoxSize.x-blockSizeX.x >= PADDED_CUTOFF &&
                                          0.5f*periodicBoxSize.y-blockSizeX.y >= PADDED_CUTOFF &&
@@ -254,6 +255,7 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
             APPLY_PERIODIC_TO_POS_WITH_CENTER(pos1, blockCenterX)
         }
 #endif
+        pos1.w = 0.5f * (pos1.x * pos1.x + pos1.y * pos1.y + pos1.z * pos1.z);
         posBuffer[threadIdx.x] = pos1;
 
         // Load exclusion data for block x.
@@ -300,7 +302,7 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
                     includeBlock2 = forceInclude = true;
 #endif
                 if (includeBlock2) {
-                    unsigned short y = (unsigned short) sortedBlocks[block2].y;
+                    int y = (int) sortedBlocks[block2].y;
                     for (int k = 0; k < numExclusions; k++)
                         includeBlock2 &= (exclusionsForX[k] != y);
                 }
@@ -314,19 +316,20 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
                 int i = __TILEFLAGS_FFS(includeBlockFlags)-1;
                 includeBlockFlags &= includeBlockFlags-1;
                 forceInclude = (forceIncludeFlags>>i) & 1;
-                unsigned short y = (unsigned short) sortedBlocks[block2Base+i].y;
+                int y = (int) sortedBlocks[block2Base+i].y;
 
                 // Check each atom in block Y for interactions.
 
                 int atom2 = y*TILE_SIZE+indexInWarp;
-                real3 pos2 = trimTo3(posq[atom2]);
+                real4 pos2 = posq[atom2];
 #ifdef USE_PERIODIC
                 if (singlePeriodicCopy) {
                     APPLY_PERIODIC_TO_POS_WITH_CENTER(pos2, blockCenterX)
                 }
 #endif
+                pos2.w = 0.5f * (pos2.x * pos2.x + pos2.y * pos2.y + pos2.z * pos2.z);
                 real4 blockCenterY = sortedBlockCenter[block2Base+i];
-                real3 atomDelta = posBuffer[warpStart+indexInWarp]-trimTo3(blockCenterY);
+                real3 atomDelta = trimTo3(posBuffer[warpStart+indexInWarp])-trimTo3(blockCenterY);
 #ifdef USE_PERIODIC
                 APPLY_PERIODIC_TO_DELTA(atomDelta)
 #endif
@@ -338,16 +341,18 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
 #ifdef USE_PERIODIC
                     if (!singlePeriodicCopy) {
                         for (int j = first; j < last; j++) {
-                            real3 delta = pos2-posBuffer[warpStart+j];
+                            real3 delta = trimTo3(pos2)-trimTo3(posBuffer[warpStart+j]);
                             APPLY_PERIODIC_TO_DELTA(delta)
                             interacts |= (delta.x*delta.x+delta.y*delta.y+delta.z*delta.z < PADDED_CUTOFF_SQUARED ? static_cast<tileflags>(1)<<j : 0);
                         }
                     }
                     else {
 #endif
-                        for (int j = first; j < last; j++) {
-                            real3 delta = pos2-posBuffer[warpStart+j];
-                            interacts |= (delta.x*delta.x+delta.y*delta.y+delta.z*delta.z < PADDED_CUTOFF_SQUARED ? static_cast<tileflags>(1)<<j : 0);
+                        #pragma unroll
+                        for (int j = 0; j < warpSize; j++) {
+                            real4 posj = posBuffer[warpStart+j];
+                            real halfDist2 = posj.w + pos2.w - posj.x*pos2.x - posj.y*pos2.y - posj.z*pos2.z;
+                            interacts |= (halfDist2 < 0.5f * PADDED_CUTOFF_SQUARED ? static_cast<tileflags>(1)<<j : 0);
                         }
 #ifdef USE_PERIODIC
                     }

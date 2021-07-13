@@ -523,10 +523,13 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     if (!options.empty())
         src << "// Compilation Options: " << options << endl << endl;
     for (auto& pair : compilationDefines) {
-        src << "#define " << pair.first;
-        if (!pair.second.empty())
-            src << " " << pair.second;
-        src << endl;
+        // Query defines to avoid duplicate variables
+        if (defines.find(pair.first) == defines.end()) {
+            src << "#define " << pair.first;
+            if (!pair.second.empty())
+                src << " " << pair.second;
+            src << endl;
+        }
     }
     if (!compilationDefines.empty())
         src << endl;
@@ -762,7 +765,7 @@ void HipContext::executeKernel(hipFunction_t kernel, void** arguments, int threa
     }
 }
 
-int HipContext::computeThreadBlockSize(double memory, bool preferShared) const {
+int HipContext::computeThreadBlockSize(double memory) const {
     int maxShared = this->sharedMemPerBlock;
     int max = (int) (maxShared/memory);
     if (max < HipContext::ThreadBlockSize) {

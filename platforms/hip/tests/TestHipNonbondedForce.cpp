@@ -34,6 +34,7 @@
 
 #include "HipTests.h"
 #include "TestNonbondedForce.h"
+#include <hip/hip_runtime.h>
 
 void testParallelComputation(NonbondedForce::NonbondedMethod method) {
     System system;
@@ -155,10 +156,33 @@ void testDeterministicForces() {
     }
 }
 
+bool canRunHugeTest() {
+    // Create a minimal context just to see which device is being used.
+
+    System system;
+    system.addParticle(1.0);
+    VerletIntegrator integrator(1.0);
+    Context context(system, integrator, platform);
+    int deviceIndex = stoi(platform.getPropertyValue(context, HipPlatform::HipDeviceIndex()));
+
+    // Find out how much memory the device has.
+
+    hipDevice_t device;
+    hipDeviceGet(&device, deviceIndex);
+    size_t memory;
+    hipDeviceTotalMem(&memory, device);
+
+    // Only run the huge test if the device has at least 4 GB of memory.
+
+    return (memory >= 4*(size_t(1)<<30));
+}
+
 void runPlatformTests() {
     testParallelComputation(NonbondedForce::NoCutoff);
     testParallelComputation(NonbondedForce::Ewald);
     testParallelComputation(NonbondedForce::PME);
     testReordering();
     testDeterministicForces();
+    if (canRunHugeTest())
+        testHugeSystem();
 }

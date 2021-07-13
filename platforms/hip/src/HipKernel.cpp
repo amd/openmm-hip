@@ -28,6 +28,7 @@
 
 #include "HipKernel.h"
 #include "openmm/common/ComputeArray.h"
+#include "openmm/internal/AssertionUtilities.h"
 #include <cstring>
 #include <vector>
 
@@ -39,6 +40,14 @@ HipKernel::HipKernel(HipContext& context, hipFunction_t kernel, const string& na
 
 string HipKernel::getName() const {
     return name;
+}
+
+int HipKernel::getMaxBlockSize() const {
+    int size;
+    hipError_t result = hipFuncGetAttribute(&size, HIP_FUNC_ATTRIBUTE_MAX_THREADS_PER_BLOCK, kernel);
+    if (result != hipSuccess)
+        throw OpenMMException("Error querying max thread block size: "+context.getErrorString(result));
+    return size;
 }
 
 void HipKernel::execute(int threads, int blockSize) {
@@ -71,10 +80,12 @@ void HipKernel::addEmptyArg() {
 }
 
 void HipKernel::setArrayArg(int index, ArrayInterface& value) {
+    ASSERT_VALID_INDEX(index, arrayArgs);
     arrayArgs[index] = &context.unwrap(value);
 }
 
 void HipKernel::setPrimitiveArg(int index, const void* value, int size) {
+    ASSERT_VALID_INDEX(index, primitiveArgs);
     if (size > sizeof(double4))
         throw OpenMMException("Unsupported value type for kernel argument");
     memcpy(&primitiveArgs[index], value, size);

@@ -93,29 +93,40 @@ void HipIntegrationUtilities::applyConstraintsImpl(bool constrainVelocities, dou
             shakeKernel->setArg(1, (float) tol);
         shakeKernel->execute(shakeAtoms.getSize());
     }
-    if (ccmaAtoms.isInitialized()) {
-        ccmaForceKernel->setArg(6, ccmaConvergedDeviceMemory);
-        if (context.getUseDoublePrecision() || context.getUseMixedPrecision())
-            ccmaForceKernel->setArg(7, tol);
-        else
-            ccmaForceKernel->setArg(7, (float) tol);
-        ccmaDirectionsKernel->execute(ccmaAtoms.getSize());
-        const int checkInterval = 4;
-        ccmaConvergedMemory[0] = 0;
-        ccmaUpdateKernel->setArg(3, constrainVelocities ? context.getVelm() : posDelta);
-        for (int i = 0; i < 150; i++) {
-            ccmaForceKernel->setArg(8, i);
-            ccmaForceKernel->execute(ccmaAtoms.getSize());
-            if ((i+1)%checkInterval == 0)
-                CHECK_RESULT2(hipEventRecord(ccmaEvent, 0), "Error recording event for CCMA");
-            ccmaMultiplyKernel->setArg(5, i);
-            ccmaMultiplyKernel->execute(ccmaAtoms.getSize());
-            ccmaUpdateKernel->setArg(8, i);
-            ccmaUpdateKernel->execute(context.getNumAtoms());
-            if ((i+1)%checkInterval == 0) {
-                CHECK_RESULT2(hipEventSynchronize(ccmaEvent), "Error synchronizing on event for CCMA");
-                if (ccmaConvergedMemory[0])
-                    break;
+    if (ccmaConstraintAtoms.isInitialized()) {
+        if (ccmaConstraintAtoms.getSize() <= 1024) {
+            // Use the version of CCMA that runs in a single kernel with one workgroup.
+            ccmaFullKernel->setArg(0, (int) constrainVelocities);
+            if (context.getUseDoublePrecision() || context.getUseMixedPrecision())
+                ccmaFullKernel->setArg(14, tol);
+            else
+                ccmaFullKernel->setArg(14, (float) tol);
+            ccmaFullKernel->execute(128, 128);
+        }
+        else {
+            ccmaForceKernel->setArg(6, ccmaConvergedDeviceMemory);
+            if (context.getUseDoublePrecision() || context.getUseMixedPrecision())
+                ccmaForceKernel->setArg(7, tol);
+            else
+                ccmaForceKernel->setArg(7, (float) tol);
+            ccmaDirectionsKernel->execute(ccmaConstraintAtoms.getSize());
+            const int checkInterval = 4;
+            ccmaConvergedMemory[0] = 0;
+            ccmaUpdateKernel->setArg(4, constrainVelocities ? context.getVelm() : posDelta);
+            for (int i = 0; i < 150; i++) {
+                ccmaForceKernel->setArg(8, i);
+                ccmaForceKernel->execute(ccmaConstraintAtoms.getSize());
+                if ((i+1)%checkInterval == 0)
+                    CHECK_RESULT2(hipEventRecord(ccmaEvent, 0), "Error recording event for CCMA");
+                ccmaMultiplyKernel->setArg(5, i);
+                ccmaMultiplyKernel->execute(ccmaConstraintAtoms.getSize());
+                ccmaUpdateKernel->setArg(9, i);
+                ccmaUpdateKernel->execute(context.getNumAtoms());
+                if ((i+1)%checkInterval == 0) {
+                    CHECK_RESULT2(hipEventSynchronize(ccmaEvent), "Error synchronizing on event for CCMA");
+                    if (ccmaConvergedMemory[0])
+                        break;
+                }
             }
         }
     }

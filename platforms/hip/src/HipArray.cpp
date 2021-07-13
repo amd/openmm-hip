@@ -88,14 +88,16 @@ ComputeContext& HipArray::getContext() {
     return *context;
 }
 
-void HipArray::upload(const void* data, bool blocking) {
+void HipArray::uploadSubArray(const void* data, int offset, int elements, bool blocking) {
     if (pointer == 0)
         throw OpenMMException("HipArray has not been initialized");
+    if (offset < 0 || offset+elements > getSize())
+        throw OpenMMException("uploadSubArray: data exceeds range of array");
     hipError_t result;
     if (blocking)
-        result = hipMemcpyHtoD(pointer, const_cast<void*>(data), size*elementSize);
+        result = hipMemcpyHtoD(pointer+offset*elementSize, const_cast<void*>(data), elements*elementSize);
     else
-        result = hipMemcpyHtoDAsync(pointer, const_cast<void*>(data), size*elementSize, context->getCurrentStream());
+        result = hipMemcpyHtoDAsync(pointer+offset*elementSize, const_cast<void*>(data), elements*elementSize, context->getCurrentStream());
     if (result != hipSuccess) {
         std::stringstream str;
         str<<"Error uploading array "<<name<<": "<<HipContext::getErrorString(result)<<" ("<<result<<")";
