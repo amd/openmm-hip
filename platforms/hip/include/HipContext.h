@@ -90,8 +90,8 @@ public:
     static const int ThreadBlockSize;
     static const int TileSize;
     HipContext(const System& system, int deviceIndex, bool useBlockingSync, const std::string& precision,
-            const std::string& compiler, const std::string& tempDir, const std::string& hostCompiler, HipPlatform::PlatformData& platformData,
-            HipContext* originalContext);
+            const std::string& compiler, const std::string& tempDir, const std::string& hostCompiler, bool allowRuntimeCompiler,
+            HipPlatform::PlatformData& platformData, HipContext* originalContext);
     ~HipContext();
     /**
      * This is called to initialize internal data structures after all Forces in the system

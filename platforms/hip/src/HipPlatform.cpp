@@ -198,8 +198,10 @@ void HipPlatform::contextCreated(ContextImpl& context, const map<string, string>
     char* threadsEnv = getenv("OPENMM_CPU_THREADS");
     if (threadsEnv != NULL)
         stringstream(threadsEnv) >> threads;
+    char* compilerEnv = getenv("OPENMM_HIP_COMPILER");
+    bool allowRuntimeCompiler = (compilerEnv == NULL && properties.find(HipCompiler()) == properties.end());
     context.setPlatformData(new PlatformData(&context, context.getSystem(), devicePropValue, blockingPropValue, precisionPropValue, cpuPmePropValue, compilerPropValue, tempPropValue,
-            hostCompilerPropValue, pmeStreamPropValue, deterministicForcesValue, threads, NULL));
+            hostCompilerPropValue, pmeStreamPropValue, deterministicForcesValue, threads, allowRuntimeCompiler, NULL));
 }
 
 void HipPlatform::linkedContextCreated(ContextImpl& context, ContextImpl& originalContext) const {
@@ -214,8 +216,9 @@ void HipPlatform::linkedContextCreated(ContextImpl& context, ContextImpl& origin
     string pmeStreamPropValue = platform.getPropertyValue(originalContext.getOwner(), HipDisablePmeStream());
     string deterministicForcesValue = platform.getPropertyValue(originalContext.getOwner(), HipDeterministicForces());
     int threads = reinterpret_cast<PlatformData*>(originalContext.getPlatformData())->threads.getNumThreads();
+    bool allowRuntimeCompiler = reinterpret_cast<PlatformData*>(originalContext.getPlatformData())->allowRuntimeCompiler;
     context.setPlatformData(new PlatformData(&context, context.getSystem(), devicePropValue, blockingPropValue, precisionPropValue, cpuPmePropValue, compilerPropValue, tempPropValue,
-            hostCompilerPropValue, pmeStreamPropValue, deterministicForcesValue, threads, &originalContext));
+            hostCompilerPropValue, pmeStreamPropValue, deterministicForcesValue, threads, allowRuntimeCompiler, &originalContext));
 }
 
 void HipPlatform::contextDestroyed(ContextImpl& context) const {
@@ -225,8 +228,9 @@ void HipPlatform::contextDestroyed(ContextImpl& context) const {
 
 HipPlatform::PlatformData::PlatformData(ContextImpl* context, const System& system, const string& deviceIndexProperty, const string& blockingProperty, const string& precisionProperty,
             const string& cpuPmeProperty, const string& compilerProperty, const string& tempProperty, const string& hostCompilerProperty, const string& pmeStreamProperty,
-            const string& deterministicForcesProperty, int numThreads, ContextImpl* originalContext) :
-                context(context), removeCM(false), stepCount(0), computeForceCount(0), time(0.0), hasInitializedContexts(false), threads(numThreads) {
+            const string& deterministicForcesProperty, int numThreads, bool allowRuntimeCompiler, ContextImpl* originalContext) :
+                context(context), removeCM(false), stepCount(0), computeForceCount(0), time(0.0), hasInitializedContexts(false),
+                threads(numThreads), allowRuntimeCompiler(allowRuntimeCompiler) {
     bool blocking = (blockingProperty == "true");
     vector<string> devices;
     size_t searchPos = 0, nextPos;
@@ -243,11 +247,11 @@ HipPlatform::PlatformData::PlatformData(ContextImpl* context, const System& syst
             if (devices[i].length() > 0) {
                 int deviceIndex;
                 stringstream(devices[i]) >> deviceIndex;
-                contexts.push_back(new HipContext(system, deviceIndex, blocking, precisionProperty, compilerProperty, tempProperty, hostCompilerProperty, *this, (originalData == NULL ? NULL : originalData->contexts[i])));
+                contexts.push_back(new HipContext(system, deviceIndex, blocking, precisionProperty, compilerProperty, tempProperty, hostCompilerProperty, allowRuntimeCompiler, *this, (originalData == NULL ? NULL : originalData->contexts[i])));
             }
         }
         if (contexts.size() == 0)
-            contexts.push_back(new HipContext(system, -1, blocking, precisionProperty, compilerProperty, tempProperty, hostCompilerProperty, *this, (originalData == NULL ? NULL : originalData->contexts[0])));
+            contexts.push_back(new HipContext(system, -1, blocking, precisionProperty, compilerProperty, tempProperty, hostCompilerProperty, allowRuntimeCompiler, *this, (originalData == NULL ? NULL : originalData->contexts[0])));
     }
     catch (...) {
         // If an exception was thrown, do our best to clean up memory.

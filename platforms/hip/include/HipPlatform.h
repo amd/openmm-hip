@@ -133,14 +133,14 @@ class OPENMM_EXPORT_COMMON HipPlatform::PlatformData {
 public:
     PlatformData(ContextImpl* context, const System& system, const std::string& deviceIndexProperty, const std::string& blockingProperty, const std::string& precisionProperty,
             const std::string& cpuPmeProperty, const std::string& compilerProperty, const std::string& tempProperty, const std::string& hostCompilerProperty,
-            const std::string& pmeStreamProperty, const std::string& deterministicForcesProperty, int numThreads, ContextImpl* originalContext);
+            const std::string& pmeStreamProperty, const std::string& deterministicForcesProperty, int numThreads, bool allowRuntimeCompiler, ContextImpl* originalContext);
     ~PlatformData();
     void initializeContexts(const System& system);
     void syncContexts();
     ContextImpl* context;
     std::vector<HipContext*> contexts;
     std::vector<double> contextEnergy;
-    bool hasInitializedContexts, removeCM, peerAccessSupported, useCpuPme, disablePmeStream, deterministicForces;
+    bool hasInitializedContexts, removeCM, peerAccessSupported, useCpuPme, disablePmeStream, deterministicForces, allowRuntimeCompiler;
     int cmMotionFrequency;
     int stepCount, computeForceCount;
     double time;

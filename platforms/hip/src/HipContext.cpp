@@ -81,13 +81,13 @@ bool HipContext::hasInitializedHip = false;
 
 
 HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSync, const string& precision, const string& compiler,
-        const string& tempDir, const std::string& hostCompiler, HipPlatform::PlatformData& platformData, HipContext* originalContext) : ComputeContext(system), currentStream(0),
-        platformData(platformData), contextIsValid(false), hasAssignedPosqCharges(false),
+        const string& tempDir, const std::string& hostCompiler, bool allowRuntimeCompiler, HipPlatform::PlatformData& platformData,
+        HipContext* originalContext) : ComputeContext(system), currentStream(0), platformData(platformData), contextIsValid(false), hasAssignedPosqCharges(false),
         hasCompilerKernel(false), isHipccAvailable(false), pinnedBuffer(NULL), integration(NULL), expression(NULL), bonded(NULL), nonbonded(NULL) {
     // Determine what compiler to use.
 
     this->compiler = "\""+compiler+"\"";
-    if (platformData.context != NULL) {
+    if (allowRuntimeCompiler && platformData.context != NULL) {
         try {
             compilerKernel = platformData.context->getPlatform().createKernel(HipCompilerKernel::Name(), *platformData.context);
             hasCompilerKernel = true;
