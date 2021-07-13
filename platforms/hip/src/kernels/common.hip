@@ -1,4 +1,3 @@
-#include "hip/hip_runtime.h"
 /**
  * This file contains CUDA definitions for the macros and functions needed for the
  * common compute framework.

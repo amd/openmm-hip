@@ -1,4 +1,3 @@
-#include "hip/hip_runtime.h"
 #define WARPS_PER_GROUP (THREAD_BLOCK_SIZE/TILE_SIZE)
 
 #ifndef ENABLE_SHUFFLE

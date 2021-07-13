@@ -1,4 +1,3 @@
-#include "hip/hip_runtime.h"
 /**
  * Sum the forces computed by different contexts.
  */

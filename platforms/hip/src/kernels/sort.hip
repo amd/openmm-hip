@@ -1,4 +1,3 @@
-#include "hip/hip_runtime.h"
 __device__ KEY_TYPE getValue(DATA_TYPE value) {
     return SORT_KEY;
 }

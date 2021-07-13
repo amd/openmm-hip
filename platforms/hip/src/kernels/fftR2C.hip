@@ -1,4 +1,3 @@
-#include "hip/hip_runtime.h"
 /**
  * Combine the two halves of a real grid into a complex grid that is half as large.
  */

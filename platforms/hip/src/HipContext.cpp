@@ -534,6 +534,9 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     if (!compilationDefines.empty())
         src << endl;
 
+    // include the main header for built-in variables (threadIdx etc.) and functions
+    src << "#include \"hip/hip_runtime.h\"\n";
+
     // include the vector types
     src << "#include \"hip/hip_vector_types.h\"\n";
     if (useDoublePrecision) {

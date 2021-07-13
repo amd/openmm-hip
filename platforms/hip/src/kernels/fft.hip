@@ -1,4 +1,3 @@
-#include "hip/hip_runtime.h"
 static __inline__ __device__ real2 multiplyComplex(real2 c1, real2 c2) {
     return make_real2(c1.x*c2.x-c1.y*c2.y, c1.x*c2.y+c1.y*c2.x);
 }

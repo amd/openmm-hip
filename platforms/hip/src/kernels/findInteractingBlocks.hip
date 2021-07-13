@@ -1,4 +1,3 @@
-#include "hip/hip_runtime.h"
 #define GROUP_SIZE 256
 #define BUFFER_SIZE 256
 
