@@ -42,8 +42,7 @@
 namespace OpenMM {
 
 /**
- * This abstract class defines an interface for code that can compile CUDA kernels.  This allows a plugin to take advantage of runtime compilation
- * when running on recent versions of CUDA.
+ * This abstract class defines an interface for code that can compile HIP kernels.  This allows a plugin to take advantage of runtime compilation.
  */
 class HipCompilerKernel : public KernelImpl {
 public:
@@ -59,7 +58,7 @@ public:
      * @param options    the flags to be passed to the compiler
      * @param cu         the HipContext for which the kernel is being compiled
      */
-    virtual std::string createModule(const std::string& source, const std::string& flags, HipContext& cu) = 0;
+    virtual std::vector<char> createModule(const std::string& source, const std::string& flags, HipContext& cu) = 0;
 };
 
 /**

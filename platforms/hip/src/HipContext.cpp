@@ -613,17 +613,17 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
 
     if (hasCompilerKernel) {
 #ifdef __HIP_PLATORM_NVCC__
+        // HIP-TODO: remove?
         string ptx = compilerKernel.getAs<HipCompilerKernel>().createModule(src.str(), "-arch=compute_"+gpuArchitecture+" "+options, *this);
 #else
-        string ptx = compilerKernel.getAs<HipCompilerKernel>().createModule(src.str(), "--targets "+gpuArchitecture+" -f=\\\""+options + "\\\"", *this);
+        vector<char> ptx = compilerKernel.getAs<HipCompilerKernel>().createModule(src.str(), options, *this);
 #endif
-
         // If possible, write the PTX out to a temporary file so we can cache it for later use.
 
         bool wroteCache = false;
         try {
             ofstream out(outputFile.c_str());
-            out << ptx;
+            out.write(&ptx[0], ptx.size());
             out.close();
             if (!out.fail())
                 wroteCache = true;
