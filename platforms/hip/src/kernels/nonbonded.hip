@@ -188,7 +188,7 @@ extern "C" __global__ void computeNonbonded(
                 real3 dEdR2 = make_real3(0);
 #endif
 #ifdef USE_EXCLUSIONS
-                bool isExcluded = (atom1 >= NUM_ATOMS || atom2 >= NUM_ATOMS || !(excl & static_cast<tileflags>(1)));
+                bool isExcluded = (atom1 >= NUM_ATOMS || atom2 >= NUM_ATOMS || !(excl & 1));
 #endif
                 real tempEnergy = 0.0f;
                 const real interactionScale = 0.5f;
@@ -206,7 +206,7 @@ extern "C" __global__ void computeNonbonded(
 #endif
 #endif
 #ifdef USE_EXCLUSIONS
-                excl >>= static_cast<tileflags>(1);
+                excl >>= 1;
 #endif
             }
         }
@@ -231,7 +231,7 @@ extern "C" __global__ void computeNonbonded(
             DECLARE_LOCAL_PARAMETERS
             LOAD_LOCAL_PARAMETERS_FROM_GLOBAL
 #ifdef USE_EXCLUSIONS
-            excl = (excl >> static_cast<tileflags>(tgx)) | (excl << static_cast<tileflags>(TILE_SIZE - tgx));
+            excl = (excl >> tgx) | (excl << (TILE_SIZE - tgx));
 #endif
             unsigned int tj = tgx;
             for (j = 0; j < TILE_SIZE; j++) {
@@ -257,7 +257,7 @@ extern "C" __global__ void computeNonbonded(
                 real3 dEdR2 = make_real3(0);
 #endif
 #ifdef USE_EXCLUSIONS
-                bool isExcluded = (atom1 >= NUM_ATOMS || atom2 >= NUM_ATOMS || !(excl & static_cast<tileflags>(1)));
+                bool isExcluded = (atom1 >= NUM_ATOMS || atom2 >= NUM_ATOMS || !(excl & 1));
 #endif
                 real tempEnergy = 0.0f;
                 const real interactionScale = 1.0f;
@@ -298,7 +298,7 @@ extern "C" __global__ void computeNonbonded(
                 SHUFFLE_WARP_DATA
 #endif
 #ifdef USE_EXCLUSIONS
-                excl >>= static_cast<tileflags>(1);
+                excl >>= 1;
 #endif
                 // cycles the indices
                 // 0 1 2 3 4 5 6 7 -> 1 2 3 4 5 6 7 0
