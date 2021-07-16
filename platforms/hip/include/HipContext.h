@@ -357,6 +357,12 @@ public:
         return false;
     }
     /**
+     * Get the tile size of the device being used.
+     */
+    int getTileSize() const {
+        return simdWidth;
+    }
+    /**
      * Get the SIMD width of the device being used.
      */
     int getSIMDWidth() const {

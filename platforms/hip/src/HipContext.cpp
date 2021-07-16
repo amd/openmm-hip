@@ -565,6 +565,7 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     }
 
     src << "typedef unsigned long tileflags;\n";
+    src << "typedef ulong2 tileflags2;\n";
     src << "static_assert(sizeof(tileflags)*8==" << HipContext::TileSize << ",\"tileflags size does not match TILE_SIZE\");\n";
     src << HipKernelSources::common << endl;
     for (auto& pair : defines) {
