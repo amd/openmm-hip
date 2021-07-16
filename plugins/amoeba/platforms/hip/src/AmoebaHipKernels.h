@@ -75,7 +75,7 @@ private:
 class HipCalcHippoNonbondedForceKernel : public CommonCalcHippoNonbondedForceKernel {
 public:
     HipCalcHippoNonbondedForceKernel(const std::string& name, const Platform& platform, HipContext& cu, const System& system) :
-            CommonCalcHippoNonbondedForceKernel(name, platform, cu, system), sort(NULL), hasInitializedFFT(false) {
+            CommonCalcHippoNonbondedForceKernel(name, platform, cu, system), cu(cu), sort(NULL), hasInitializedFFT(false) {
     }
     ~HipCalcHippoNonbondedForceKernel();
     /**
@@ -110,6 +110,7 @@ private:
         const char* getMaxValue() const {return "make_int2(2147483647, 2147483647)";}
         const char* getSortKey() const {return "value.y";}
     };
+    HipContext& cu;
     bool hasInitializedFFT;
     HipSort* sort;
     hipfftHandle fftForward, fftBackward, dfftForward, dfftBackward;

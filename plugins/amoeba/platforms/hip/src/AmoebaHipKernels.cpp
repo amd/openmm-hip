@@ -137,8 +137,7 @@ HipCalcHippoNonbondedForceKernel::~HipCalcHippoNonbondedForceKernel() {
 void HipCalcHippoNonbondedForceKernel::initialize(const System& system, const HippoNonbondedForce& force) {
     CommonCalcHippoNonbondedForceKernel::initialize(system, force);
     if (usePME) {
-        HipContext& cc = dynamic_cast<HipContext&>(cc);
-        sort = new HipSort(cc, new SortTrait(), cc.getNumAtoms());
+        sort = new HipSort(cu, new SortTrait(), cc.getNumAtoms());
         hipfftResult result = hipfftPlan3d(&fftForward, gridSizeX, gridSizeY, gridSizeZ, cc.getUseDoublePrecision() ? HIPFFT_D2Z : HIPFFT_R2C);
         if (result != HIPFFT_SUCCESS)
             throw OpenMMException("Error initializing FFT: "+cc.intToString(result));
