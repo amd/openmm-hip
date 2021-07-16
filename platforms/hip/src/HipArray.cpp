@@ -95,9 +95,9 @@ void HipArray::uploadSubArray(const void* data, int offset, int elements, bool b
         throw OpenMMException("uploadSubArray: data exceeds range of array");
     hipError_t result;
     if (blocking)
-        result = hipMemcpyHtoD(pointer+offset*elementSize, const_cast<void*>(data), elements*elementSize);
+        result = hipMemcpyHtoD(reinterpret_cast<char*>(pointer)+offset*elementSize, const_cast<void*>(data), elements*elementSize);
     else
-        result = hipMemcpyHtoDAsync(pointer+offset*elementSize, const_cast<void*>(data), elements*elementSize, context->getCurrentStream());
+        result = hipMemcpyHtoDAsync(reinterpret_cast<char*>(pointer)+offset*elementSize, const_cast<void*>(data), elements*elementSize, context->getCurrentStream());
     if (result != hipSuccess) {
         std::stringstream str;
         str<<"Error uploading array "<<name<<": "<<HipContext::getErrorString(result)<<" ("<<result<<")";
