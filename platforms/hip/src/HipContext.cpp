@@ -519,6 +519,9 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     static_assert(8*sizeof(void*) == HipContext::TileSize);
     string bits = intToString(8*sizeof(void*));
     string options = (optimizationFlags == NULL ? defaultOptimizationOptions : string(optimizationFlags));
+    if (getMaxThreadBlockSize() < 1024) {
+        options += " --gpu-max-threads-per-block=" + std::to_string(getMaxThreadBlockSize());
+    }
     stringstream src;
     if (!options.empty())
         src << "// Compilation Options: " << options << endl << endl;
@@ -758,8 +761,14 @@ std::string HipContext::getErrorString(hipError_t result) {
 }
 
 void HipContext::executeKernel(hipFunction_t kernel, void** arguments, int threads, int blockSize, unsigned int sharedSize) {
-    if (blockSize == -1)
+    if (blockSize == -1) {
         blockSize = ThreadBlockSize;
+    }
+    else if (blockSize > getMaxThreadBlockSize()) {
+        stringstream str;
+        str<<"Error invoking kernel: block size ("<<blockSize<<") is larger than the maximum block size supported by this device ("<<getMaxThreadBlockSize()<<")";
+        throw OpenMMException(str.str());
+    }
     int gridSize = std::min((threads+blockSize-1)/blockSize, numThreadBlocks);
     hipError_t result = hipModuleLaunchKernel(kernel, gridSize, 1, 1, blockSize, 1, 1, sharedSize, currentStream, arguments, NULL);
     if (result != hipSuccess) {
@@ -848,7 +857,7 @@ void HipContext::clearAutoclearBuffers() {
 
 double HipContext::reduceEnergy() {
     int bufferSize = energyBuffer.getSize();
-    int workGroupSize  = 512;
+    int workGroupSize = getMaxThreadBlockSize();
     void* args[] = {&energyBuffer.getDevicePointer(), &energySum.getDevicePointer(), &bufferSize, &workGroupSize};
     executeKernel(reduceEnergyKernel, args, workGroupSize, workGroupSize, workGroupSize*energyBuffer.getElementSize());
     energySum.download(pinnedBuffer);

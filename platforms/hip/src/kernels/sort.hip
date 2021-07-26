@@ -52,7 +52,7 @@ __global__ void sortShortList(DATA_TYPE* __restrict__ data, unsigned int length)
  * work, but also parallelizes much better.
  */
 __global__ void sortShortList2(const DATA_TYPE* __restrict__ dataIn, DATA_TYPE* __restrict__ dataOut, unsigned int length) {
-    __shared__ DATA_TYPE dataBuffer[64];
+    HIP_DYNAMIC_SHARED( DATA_TYPE, dataBuffer)
     int globalId = blockDim.x*blockIdx.x+threadIdx.x;
     DATA_TYPE value = dataIn[globalId < length ? globalId : 0];
     KEY_TYPE key = getValue(value);

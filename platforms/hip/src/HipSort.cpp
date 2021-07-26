@@ -55,8 +55,7 @@ HipSort::HipSort(HipContext& context, SortTrait* trait, unsigned int length) : c
 
     // Work out the work group sizes for various kernels.
 
-    int maxBlockSize;
-    hipDeviceGetAttribute(&maxBlockSize, hipDeviceAttributeMaxBlockDimX, context.getDevice());
+    int maxBlockSize = context.getMaxThreadBlockSize();
     int maxSharedMem;
     hipDeviceGetAttribute(&maxSharedMem, hipDeviceAttributeMaxSharedMemoryPerBlock, context.getDevice());
     int maxLocalBuffer = (maxSharedMem/trait->getDataSize())/2;
@@ -102,7 +101,7 @@ void HipSort::sort(HipArray& data) {
 
         if (dataLength <= HipContext::ThreadBlockSize*context.getNumThreadBlocks()) {
             void* sortArgs[] = {&data.getDevicePointer(), &buckets.getDevicePointer(), &dataLength};
-            context.executeKernel(shortList2Kernel, sortArgs, dataLength);
+            context.executeKernel(shortList2Kernel, sortArgs, dataLength, HipContext::ThreadBlockSize, HipContext::ThreadBlockSize*trait->getDataSize());
             buckets.copyTo(data);
         }
         else {
