@@ -2,7 +2,7 @@
 #define BUFFER_SIZE 256
 
 // type compat.
-#ifdef __HIP_PLATFORM_NVCC__
+#if TILE_SIZE == 32
 __device__ inline int __TILEFLAGS_FFS(unsigned int x) {
     return __ffs(x);
 }

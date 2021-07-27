@@ -65,8 +65,6 @@
 #include "openmm/common/ComputeContext.h"
 #include "openmm/Kernel.h"
 
-typedef unsigned long tileflags;
-
 namespace OpenMM {
 
 /**
@@ -88,7 +86,6 @@ public:
     class ForcePreComputation;
     class ForcePostComputation;
     static const int ThreadBlockSize;
-    static const int TileSize;
     HipContext(const System& system, int deviceIndex, bool useBlockingSync, const std::string& precision,
             const std::string& compiler, const std::string& tempDir, const std::string& hostCompiler, bool allowRuntimeCompiler,
             HipPlatform::PlatformData& platformData, HipContext* originalContext);
@@ -332,7 +329,7 @@ public:
      */
     double reduceEnergy();
     /**
-     * Get the number of blocks of TileSize atoms.
+     * Get the number of blocks of tileSize atoms.
      */
     int getNumAtomBlocks() const {
         return numAtomBlocks;
@@ -360,7 +357,7 @@ public:
      * Get the tile size of the device being used.
      */
     int getTileSize() const {
-        return simdWidth;
+        return tileSize;
     }
     /**
      * Get the SIMD width of the device being used.
@@ -566,6 +563,7 @@ private:
     int numAtomBlocks;
     int numThreadBlocks;
     int simdWidth;
+    int tileSize;
     int sharedMemPerBlock;
     bool hasDoubles;
     bool hasGlobalInt64Atomics;

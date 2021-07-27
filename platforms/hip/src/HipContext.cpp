@@ -75,8 +75,6 @@ using namespace OpenMM;
 using namespace std;
 
 const int HipContext::ThreadBlockSize = 64;
-const int HipContext::TileSize = sizeof(tileflags)*8;
-static_assert(HipContext::ThreadBlockSize == HipContext::TileSize);
 bool HipContext::hasInitializedHip = false;
 
 
@@ -200,6 +198,7 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
 
     // set device properties
     this->simdWidth = props.warpSize;
+    this->tileSize = simdWidth;
     this->sharedMemPerBlock = props.sharedMemPerBlock;
     this->hasGlobalInt64Atomics = props.arch.hasGlobalInt64Atomics;
     this->hasDoubles = props.arch.hasDoubles;
@@ -254,8 +253,8 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
         }
     }
     numAtoms = system.getNumParticles();
-    paddedNumAtoms = TileSize*((numAtoms+TileSize-1)/TileSize);
-    numAtomBlocks = (paddedNumAtoms+(TileSize-1))/TileSize;
+    paddedNumAtoms = tileSize*((numAtoms+tileSize-1)/tileSize);
+    numAtomBlocks = (paddedNumAtoms+(tileSize-1))/tileSize;
     int multiprocessors;
     CHECK_RESULT(hipDeviceGetAttribute(&multiprocessors, hipDeviceAttributeMultiprocessorCount, device));
     numThreadBlocks = numThreadBlocksPerComputeUnit*multiprocessors;
@@ -516,7 +515,6 @@ hipModule_t HipContext::createModule(const string source, const char* optimizati
 }
 
 hipModule_t HipContext::createModule(const string source, const map<string, string>& defines, const char* optimizationFlags) {
-    static_assert(8*sizeof(void*) == HipContext::TileSize);
     string bits = intToString(8*sizeof(void*));
     string options = (optimizationFlags == NULL ? defaultOptimizationOptions : string(optimizationFlags));
     if (getMaxThreadBlockSize() < 1024) {
@@ -566,10 +564,15 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
         src << "typedef float3 mixed3;\n";
         src << "typedef float4 mixed4;\n";
     }
-
-    src << "typedef unsigned long tileflags;\n";
-    src << "typedef ulong2 tileflags2;\n";
-    src << "static_assert(sizeof(tileflags)*8==" << HipContext::TileSize << ",\"tileflags size does not match TILE_SIZE\");\n";
+    if (tileSize > 32) {
+        src << "typedef unsigned long tileflags;\n";
+        src << "typedef ulong2 tileflags2;\n";
+    }
+    else {
+        src << "typedef unsigned int tileflags;\n";
+        src << "typedef uint2 tileflags2;\n";
+    }
+    src << "static_assert(sizeof(tileflags)*8==" << tileSize << ",\"tileflags size does not match TILE_SIZE\");\n";
     src << HipKernelSources::common << endl;
     for (auto& pair : defines) {
         src << "#define " << pair.first;

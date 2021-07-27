@@ -174,6 +174,16 @@ static bool compareInt2(int2 a, int2 b) {
 }
 
 void HipNonbondedUtilities::initialize(const System& system) {
+    if (context.getTileSize() > 32) {
+        initialize<unsigned long>(system);
+    }
+    else {
+        initialize<unsigned int>(system);
+    }
+}
+
+template <typename tileflags>
+void HipNonbondedUtilities::initialize(const System& system) {
     string errorMessage = "Error initializing nonbonded utilities";
     if (atomExclusions.size() == 0) {
         // No exclusions were specifically requested, so just mark every atom as not interacting with itself.
@@ -182,6 +192,8 @@ void HipNonbondedUtilities::initialize(const System& system) {
         for (int i = 0; i < (int) atomExclusions.size(); i++)
             atomExclusions[i].push_back(i);
     }
+
+    const int tileSize = context.getTileSize();
 
     // Create the list of tiles.
 
@@ -194,10 +206,10 @@ void HipNonbondedUtilities::initialize(const System& system) {
 
     set<pair<int, int> > tilesWithExclusions;
     for (int atom1 = 0; atom1 < (int) atomExclusions.size(); ++atom1) {
-        int x = atom1/HipContext::TileSize;
+        int x = atom1/tileSize;
         for (int j = 0; j < (int) atomExclusions[atom1].size(); ++j) {
             int atom2 = atomExclusions[atom1][j];
-            int y = atom2/HipContext::TileSize;
+            int y = atom2/tileSize;
             tilesWithExclusions.insert(make_pair(max(x, y), min(x, y)));
         }
     }
@@ -234,22 +246,22 @@ void HipNonbondedUtilities::initialize(const System& system) {
 
     // Record the exclusion data.
 
-    exclusions.initialize<tileflags>(context, tilesWithExclusions.size()*HipContext::TileSize, "exclusions");
+    exclusions.initialize<tileflags>(context, tilesWithExclusions.size()*tileSize, "exclusions");
     tileflags allFlags = static_cast<tileflags>(-1);
     vector<tileflags> exclusionVec(exclusions.getSize(), allFlags);
     for (int atom1 = 0; atom1 < (int) atomExclusions.size(); ++atom1) {
-        int x = atom1/HipContext::TileSize;
-        int offset1 = atom1-x*HipContext::TileSize;
+        int x = atom1/tileSize;
+        int offset1 = atom1-x*tileSize;
         for (int j = 0; j < (int) atomExclusions[atom1].size(); ++j) {
             int atom2 = atomExclusions[atom1][j];
-            int y = atom2/HipContext::TileSize;
-            int offset2 = atom2-y*HipContext::TileSize;
+            int y = atom2/tileSize;
+            int offset2 = atom2-y*tileSize;
             if (x > y) {
-                int index = exclusionTileMap[make_pair(x, y)]*HipContext::TileSize;
+                int index = exclusionTileMap[make_pair(x, y)]*tileSize;
                 exclusionVec[index+offset1] &= allFlags-(static_cast<tileflags>(1)<<offset2);
             }
             else {
-                int index = exclusionTileMap[make_pair(y, x)]*HipContext::TileSize;
+                int index = exclusionTileMap[make_pair(y, x)]*tileSize;
                 exclusionVec[index+offset2] &= allFlags-(static_cast<tileflags>(1)<<offset1);
             }
         }
@@ -270,7 +282,7 @@ void HipNonbondedUtilities::initialize(const System& system) {
             maxTiles = 1;
         maxSinglePairs = 5*numAtoms;
         interactingTiles.initialize<int>(context, maxTiles, "interactingTiles");
-        interactingAtoms.initialize<int>(context, HipContext::TileSize*maxTiles, "interactingAtoms");
+        interactingAtoms.initialize<int>(context, tileSize*maxTiles, "interactingAtoms");
         interactionCount.initialize<unsigned int>(context, 2, "interactionCount");
         singlePairs.initialize<int2>(context, maxSinglePairs, "singlePairs");
         int elementSize = (context.getUseDoublePrecision() ? sizeof(double) : sizeof(float));
@@ -437,7 +449,7 @@ bool HipNonbondedUtilities::updateNeighborListSize() {
         if (maxTiles > totalTiles)
             maxTiles = totalTiles;
         interactingTiles.resize(maxTiles);
-        interactingAtoms.resize(HipContext::TileSize*maxTiles);
+        interactingAtoms.resize(context.getTileSize()*maxTiles);
         if (forceArgs.size() > 0)
             forceArgs[7] = &interactingTiles.getDevicePointer();
         findInteractingBlocksArgs[6] = &interactingTiles.getDevicePointer();
@@ -488,7 +500,7 @@ void HipNonbondedUtilities::createKernelsForGroups(int groups) {
     if (useCutoff) {
         double paddedCutoff = padCutoff(cutoff);
         map<string, string> defines;
-        defines["TILE_SIZE"] = context.intToString(HipContext::TileSize);
+        defines["TILE_SIZE"] = context.intToString(context.getTileSize());
         defines["NUM_BLOCKS"] = context.intToString(context.getNumAtomBlocks());
         defines["NUM_ATOMS"] = context.intToString(context.getNumAtoms());
         defines["PADDING"] = context.doubleToString(paddedCutoff-cutoff);
@@ -729,7 +741,7 @@ hipFunction_t HipNonbondedUtilities::createInteractionKernel(const string& sourc
     defines["NUM_ATOMS"] = context.intToString(context.getNumAtoms());
     defines["PADDED_NUM_ATOMS"] = context.intToString(context.getPaddedNumAtoms());
     defines["NUM_BLOCKS"] = context.intToString(context.getNumAtomBlocks());
-    defines["TILE_SIZE"] = context.intToString(HipContext::TileSize);
+    defines["TILE_SIZE"] = context.intToString(context.getTileSize());
     int numExclusionTiles = exclusionTiles.getSize();
     defines["NUM_TILES_WITH_EXCLUSIONS"] = context.intToString(numExclusionTiles);
     int numContexts = context.getPlatformData().contexts.size();
