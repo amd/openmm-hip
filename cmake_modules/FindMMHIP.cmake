@@ -17,7 +17,7 @@
 #   HIP_HIPCONFIG_EXECUTABLE - path to hipconfig
 #   HIP_INCLUDE_DIRS         - include directories for HIP runtime
 #   ROCFFT_INCLUDE_DIRS      - include directories for rocFFT
-#   HIP_COMPILER             - either hcc or clang
+#   HIP_COMPILER             - HIP-clang
 #
 #   In addition to what is defined by FindHIP.cmake, this module:
 #
@@ -37,6 +37,11 @@
 
 FIND_PACKAGE(HIP CONFIG QUIET)
 IF(HIP_FOUND)
+    IF(${HIP_COMPILER} STREQUAL "clang")
+        MESSAGE(STATUS "Using HIP-Clang compiler")
+    ELSE()
+        MESSAGE(FATAL_ERROR "HIP compiler ${HIP_COMPILER} not recognized!")
+    ENDIF()
     LIST(APPEND CMAKE_MODULE_PATH "${HIP_ROOT_DIR}/lib/cmake/hip")
     LIST(APPEND CMAKE_MODULE_PATH "${HIP_ROOT_DIR}/../rocfft/lib/cmake/rocfft")
 
@@ -51,24 +56,9 @@ IF(HIP_FOUND)
     # set HIP link directories
     # this includes HIP, rocFFT, and the roctracer
     SET(MMHIP_LINK_DIRS ${HIP_ROOT_PATH}/lib ${HIP_ROOT_PATH}/../rocfft/lib ${HIP_ROOT_PATH}/../hsa/lib ${HIP_ROOT_PATH}/../roctracer/lib)
-
-    # determine compiler and add as compile-time define, such that we can know
-    # what compiler we're using in host-code compiled with g++
-    IF(${HIP_COMPILER} STREQUAL "clang")
-        MESSAGE(STATUS "Using HIP-Clang compiler")
-        SET(HIPCXXFLAGS "${HIPCXXFLAGS} -DHIP_USING_HIPCLANG")
-        # set HIP libraries
-        # this includes HIP, rocFFT, and the roctracer
-        SET(MMHIP_LIBS amdhip64 rocfft roctracer64)
-    ELSEIF(${HIP_COMPILER} STREQUAL "hcc")
-        MESSAGE(STATUS "Using HCC compiler")
-        SET(HIPCXXFLAGS "${HIPCXXFLAGS} -DHIP_USING_HCC")
-        # set HIP libraries
-        # this includes HIP, rocFFT, and the roctracer
-        SET(MMHIP_LIBS hip_hcc rocfft roctracer64)
-    ELSE()
-        MESSAGE(FATAL_ERROR "HIP compiler ${HIP_COMPILER} not recognized!")
-    ENDIF()
+    # set HIP libraries
+    # this includes HIP, rocFFT, and the roctracer
+    SET(MMHIP_LIBS amdhip64 rocfft roctracer64)
 ENDIF(HIP_FOUND)
 
 find_package_handle_standard_args(MMHIP DEFAULT_MSG HIP_ROOT_PATH)

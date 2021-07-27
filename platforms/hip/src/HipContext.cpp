@@ -161,18 +161,6 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
                 else
                     flags += hipDeviceScheduleSpin;
 
-                #ifdef HIP_USING_HCC
-                // workaround for ROCm <= 3.3
-                // check flags on default context & consider succesful if the
-                // same
-                unsigned int checkflags;
-                CHECK_RESULT(hipCtxGetFlags(&checkflags))
-                if (flags & checkflags) {
-                    this->deviceIndex = trialDeviceIndex;
-                    break;
-                }
-                #endif
-
                 if (hipSetDeviceFlags(flags) == hipSuccess) {
                     this->deviceIndex = trialDeviceIndex;
                     break;
@@ -202,11 +190,8 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     this->sharedMemPerBlock = props.sharedMemPerBlock;
     this->hasGlobalInt64Atomics = props.arch.hasGlobalInt64Atomics;
     this->hasDoubles = props.arch.hasDoubles;
-    #ifdef HIP_USING_HCC
-    this->hasWarpShuffle = props.arch.hasWarpShuffle;
-    #else
+    // HIP-TODO: remove hasWarpShuffle==false paths completely?
     this->hasWarpShuffle = true;
-    #endif // hip-clang bug
 
 #ifdef __HIP_PLATORM_NVCC__
     int major, minor;
@@ -443,15 +428,6 @@ HipContext::~HipContext() {
     string errorMessage = "Error deleting Context";
     if (contextIsValid && !isLinkedContext) {
         roctracer_stop();
-#ifdef HIP_USING_HCC
-        // TODO: we are currently forced to use a hipDeviceReset here, otherwise
-        //       a subsequent hipSetDeviceFlags will fail with a hipErrorSetOnActiveProcess
-        // this is not required for ROCm >= 3.5
-        if (getCurrentStream() != nullptr)
-            hipStreamSynchronize(getCurrentStream());
-        else
-            hipDeviceSynchronize();
-#endif
     }
     contextIsValid = false;
 }
@@ -654,15 +630,7 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
         string command = compiler+" --ptx --machine "+bits+" -arch=sm_"+gpuArchitecture+" -o \""+outputFile+"\" "+options+" \""+inputFile+"\" 2> \""+logFile+"\"";
         res = std::system(command.c_str());
 #else
-        string command = compiler + " --genco ";
-#if HIP_USING_HCC
-        // current AMD GPU compiler HCC requires some mangling of flags for --genco
-        command += "--targets " + gpuArchitecture + " -f=\\\"" + options + "\\\"";
-#else
-        // HIP-Clang compiler uses regular specification method
-        command +=  "--amdgpu-target=" + gpuArchitecture + " " + options;
-#endif
-        command += " -o \""+outputFile+"\" " + " \""+inputFile+"\" 2> \""+logFile+"\"";
+        string command = compiler + " --genco --amdgpu-target=" + gpuArchitecture + " " + options + " -o \""+outputFile+"\" " + " \""+inputFile+"\" 2> \""+logFile+"\"";
         res = std::system(command.c_str());
 #endif
     }
