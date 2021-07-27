@@ -321,15 +321,15 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
 
     // Set defines based on the requested precision.
 
-    compilationDefines["SQRT"] = useDoublePrecision ? "sqrt" : "sqrtf";
-    compilationDefines["RSQRT"] = useDoublePrecision ? "rsqrt" : "rsqrtf";
-    compilationDefines["RECIP"] = useDoublePrecision ? "1.0/" : "1.0f/";
-    compilationDefines["EXP"] = useDoublePrecision ? "exp" : "expf";
-    compilationDefines["LOG"] = useDoublePrecision ? "log" : "logf";
-    compilationDefines["POW"] = useDoublePrecision ? "pow" : "powf";
-    compilationDefines["COS"] = useDoublePrecision ? "cos" : "cosf";
-    compilationDefines["SIN"] = useDoublePrecision ? "sin" : "sinf";
-    compilationDefines["TAN"] = useDoublePrecision ? "tan" : "tanf";
+    compilationDefines["SQRT"] = useDoublePrecision ? "__dsqrt_rn" : "__fsqrt_rn";
+    compilationDefines["RSQRT"] = useDoublePrecision ? "rsqrt" : "__frsqrt_rn";
+    compilationDefines["RECIP"] = useDoublePrecision ? "__drcp_rn" : "__frcp_rn";
+    compilationDefines["EXP"] = useDoublePrecision ? "exp" : "__expf";
+    compilationDefines["LOG"] = useDoublePrecision ? "log" : "__logf";
+    compilationDefines["POW"] = useDoublePrecision ? "pow" : "__powf";
+    compilationDefines["COS"] = useDoublePrecision ? "cos" : "__cosf";
+    compilationDefines["SIN"] = useDoublePrecision ? "sin" : "__sinf";
+    compilationDefines["TAN"] = useDoublePrecision ? "tan" : "__tanf";
     compilationDefines["ACOS"] = useDoublePrecision ? "acos" : "acosf";
     compilationDefines["ASIN"] = useDoublePrecision ? "asin" : "asinf";
     compilationDefines["ATAN"] = useDoublePrecision ? "atan" : "atanf";
