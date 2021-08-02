@@ -376,22 +376,16 @@ public:
         return simdWidth;
     }
     /**
-     * Get whether the device being used warp shuffles.
-     */
-    bool getSupportsWarpShuffle() const {
-        return hasWarpShuffle;
-    }
-    /**
      * Get whether the device being used supports 64 bit atomic operations on global memory.
      */
     bool getSupports64BitGlobalAtomics() const {
-        return hasGlobalInt64Atomics;
+        return true;
     }
     /**
      * Get whether the device being used supports double precision math.
      */
     bool getSupportsDoublePrecision() const {
-        return hasDoubles;
+        return true;
     }
     /**
      * Get whether double precision is being used.
@@ -575,9 +569,6 @@ private:
     int simdWidth;
     int tileSize;
     int sharedMemPerBlock;
-    bool hasDoubles;
-    bool hasGlobalInt64Atomics;
-    bool hasWarpShuffle;
     bool useBlockingSync, useDoublePrecision, useMixedPrecision, contextIsValid, boxIsTriclinic, hasCompilerKernel, isHipccAvailable, hasAssignedPosqCharges;
     bool isLinkedContext;
     std::string compiler, tempDir, cacheDir, gpuArchitecture;

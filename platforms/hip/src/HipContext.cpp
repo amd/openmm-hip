@@ -188,10 +188,6 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     this->simdWidth = props.warpSize;
     this->tileSize = simdWidth;
     this->sharedMemPerBlock = props.sharedMemPerBlock;
-    this->hasGlobalInt64Atomics = props.arch.hasGlobalInt64Atomics;
-    this->hasDoubles = props.arch.hasDoubles;
-    // HIP-TODO: remove hasWarpShuffle==false paths completely?
-    this->hasWarpShuffle = true;
 
 #ifdef __HIP_PLATORM_NVCC__
     int major, minor;
@@ -912,11 +908,6 @@ vector<int> HipContext::getDevicePrecedence() {
 
         // gcn arch is avialable if needed, however...
         int major = thisDevice.gcnArch;
-
-        // the arch struct is typically more useful
-        // see https://rocm-developer-tools.github.io/HIP/structhipDeviceArch__t.html
-        if ((useDoublePrecision || useMixedPrecision) && !thisDevice.arch.hasDoubles)
-            continue;
 #endif
         clock = thisDevice.clockRate;
         multiprocessors = thisDevice.multiProcessorCount;

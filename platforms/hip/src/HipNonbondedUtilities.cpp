@@ -569,7 +569,7 @@ hipFunction_t HipNonbondedUtilities::createInteractionKernel(const string& sourc
     }
     replacements["LOAD_ATOM1_PARAMETERS"] = load1.str();
 
-    bool useShuffle = context.getSupportsWarpShuffle();
+    bool useShuffle = true;
 
     // Part 1. Defines for on diagonal exclusion tiles
     stringstream loadLocal1;
