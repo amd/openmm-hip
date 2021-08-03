@@ -647,11 +647,13 @@ hipFunction_t HipNonbondedUtilities::createInteractionKernel(const string& sourc
         defines["USE_EXCLUSIONS"] = "1";
     if (isSymmetric)
         defines["USE_SYMMETRIC"] = "1";
+    defines["ENABLE_SHUFFLE"] = "1"; // Used only in hippoNonbonded.cc
     if (includeForces)
         defines["INCLUDE_FORCES"] = "1";
     if (includeEnergy)
         defines["INCLUDE_ENERGY"] = "1";
     defines["THREAD_BLOCK_SIZE"] = context.intToString(forceThreadBlockSize);
+    defines["OCCUPANCY"] = context.getUseDoublePrecision() ? "2" : "5";
     double maxCutoff = 0.0;
     for (int i = 0; i < 32; i++) {
         if ((groups&(1<<i)) != 0) {

@@ -255,12 +255,18 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     // GCN hardware is more like CUDA-8, w/ no independent forward progress
     // or *_sync primatives
     compilationDefines["SYNC_WARPS"] = "";
-    compilationDefines["SHFL(var, srcLane)"] = "__shfl(var, srcLane);";
+    if (tileSize == simdWidth)
+        compilationDefines["SHFL(var, srcLane)"] = "__shfl(var, srcLane);";
+    else
+        compilationDefines["SHFL(var, srcLane)"] = "__shfl(var, (srcLane) & (" + intToString(tileSize) + " - 1), " + intToString(tileSize) + ");";
     // Important: the predicate for ballot is defined as an integer, hence
     // it is important that we convert the variable field to a true/false value
     // before running ballot, such that we do not discard the top half when
     // running on a long int
-    compilationDefines["BALLOT(var)"] = "__ballot((var) != 0);";
+    if (tileSize == simdWidth)
+        compilationDefines["BALLOT(var)"] = "__ballot((var) != 0);";
+    else
+        compilationDefines["BALLOT(var)"] = "(tileflags)(__ballot((var) != 0) >> (threadIdx.x & ((" + intToString(simdWidth) + " - 1) ^ (" + intToString(tileSize) + " - 1))));";
 #endif
     if (useDoublePrecision) {
         posq.initialize<double4>(*this, paddedNumAtoms, "posq");
