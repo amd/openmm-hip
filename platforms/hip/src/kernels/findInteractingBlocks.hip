@@ -106,7 +106,7 @@ extern "C" __global__ void sortBoxData(const real2* __restrict__ sortedBlock, co
     }
 }
 
-__device__ int saveSinglePairs(int x, int* atoms, tileflags* flags, int length, unsigned int maxSinglePairs, unsigned int* singlePairCount, int2* singlePairs, int* sumBuffer, int& pairStartIndex) {
+__device__ int saveSinglePairs(int x, int* atoms, tileflags* flags, int length, unsigned int maxSinglePairs, unsigned int* singlePairCount, int2* singlePairs, int* sumBuffer) {
     // Record interactions that should be computed as single pairs rather than in blocks.
 
     const int indexInWarp = threadIdx.x%warpSize;
@@ -120,9 +120,10 @@ __device__ int saveSinglePairs(int x, int* atoms, tileflags* flags, int length, 
         if (indexInWarp >= i)
             sum += n;
     }
+    int pairStartIndex = 0;
     if (indexInWarp == warpSize - 1)
         pairStartIndex = atomicAdd(singlePairCount,(unsigned int) sum);
-    __builtin_amdgcn_wave_barrier();
+    pairStartIndex = SHFL(pairStartIndex, warpSize - 1);
     int prevSum = SHFL(sum, indexInWarp - 1);
     int pairIndex = pairStartIndex + (indexInWarp > 0 ? prevSum : 0);
     for (int i = indexInWarp; i < length; i += warpSize) {
@@ -225,14 +226,10 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
     __shared__ tileflags workgroupFlagsBuffer[BUFFER_SIZE*(GROUP_SIZE/warpSize)];
     __shared__ int warpExclusions[MAX_EXCLUSIONS*(GROUP_SIZE/warpSize)];
     __shared__ real4 posBuffer[GROUP_SIZE];
-    __shared__ int workgroupTileIndex[GROUP_SIZE/warpSize];
-    __shared__ int worksgroupPairStartIndex[GROUP_SIZE/warpSize];
     int* sumBuffer = (int*) posBuffer; // Reuse the same buffer to save memory
     int* buffer = workgroupBuffer+BUFFER_SIZE*(warpStart/warpSize);
     tileflags* flagsBuffer = workgroupFlagsBuffer+BUFFER_SIZE*(warpStart/warpSize);
     int* exclusionsForX = warpExclusions+MAX_EXCLUSIONS*(warpStart/warpSize);
-    int& tileStartIndex = workgroupTileIndex[warpStart/warpSize];
-    int& pairStartIndex = worksgroupPairStartIndex[warpStart/warpSize];
 
     // Loop over blocks.
 
@@ -374,14 +371,14 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
                     // Store the new tiles to memory.
 
     #if MAX_BITS_FOR_PAIRS > 0
-                    neighborsInBuffer = saveSinglePairs(x, buffer, flagsBuffer, neighborsInBuffer, maxSinglePairs, &interactionCount[1], singlePairs, sumBuffer+warpStart, pairStartIndex);
+                    neighborsInBuffer = saveSinglePairs(x, buffer, flagsBuffer, neighborsInBuffer, maxSinglePairs, &interactionCount[1], singlePairs, sumBuffer+warpStart);
     #endif
                     int tilesToStore = neighborsInBuffer/TILE_SIZE;
                     if (tilesToStore > 0) {
+                        int tileStartIndex = 0;
                         if (indexInWarp == 0)
                             tileStartIndex = atomicAdd(&interactionCount[0], tilesToStore);
-                        __builtin_amdgcn_wave_barrier();
-                        int newTileStartIndex = tileStartIndex;
+                        int newTileStartIndex = SHFL(tileStartIndex, 0);
                         if (newTileStartIndex+tilesToStore <= maxTiles) {
                             if (indexInWarp < tilesToStore)
                                 interactingTiles[newTileStartIndex+indexInWarp] = x;
@@ -399,14 +396,14 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
 
     #if MAX_BITS_FOR_PAIRS > 0
         if (neighborsInBuffer > warpSize)
-            neighborsInBuffer = saveSinglePairs(x, buffer, flagsBuffer, neighborsInBuffer, maxSinglePairs, &interactionCount[1], singlePairs, sumBuffer+warpStart, pairStartIndex);
+            neighborsInBuffer = saveSinglePairs(x, buffer, flagsBuffer, neighborsInBuffer, maxSinglePairs, &interactionCount[1], singlePairs, sumBuffer+warpStart);
     #endif
         if (neighborsInBuffer > 0) {
             int tilesToStore = (neighborsInBuffer+TILE_SIZE-1)/TILE_SIZE;
+            int tileStartIndex = 0;
             if (indexInWarp == 0)
                 tileStartIndex = atomicAdd(&interactionCount[0], tilesToStore);
-            __builtin_amdgcn_wave_barrier();
-            int newTileStartIndex = tileStartIndex;
+            int newTileStartIndex = SHFL(tileStartIndex, 0);
             if (newTileStartIndex+tilesToStore <= maxTiles) {
                 if (indexInWarp < tilesToStore)
                     interactingTiles[newTileStartIndex+indexInWarp] = x;
