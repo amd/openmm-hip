@@ -240,6 +240,7 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     CHECK_RESULT(hipDeviceGetAttribute(&multiprocessors, hipDeviceAttributeMultiprocessorCount, device));
     numThreadBlocks = numThreadBlocksPerComputeUnit*multiprocessors;
 
+    compilationDefines["ENABLE_SHUFFLE"] = "1";
 #ifdef __HIP_PLATORM_NVCC_
     if (cudaDriverVersion >= 9000) {
         compilationDefines["SYNC_WARPS"] = "__syncwarp();";
