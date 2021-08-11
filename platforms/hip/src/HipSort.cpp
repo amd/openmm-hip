@@ -55,25 +55,24 @@ HipSort::HipSort(HipContext& context, SortTrait* trait, unsigned int length) : c
 
     // Work out the work group sizes for various kernels.
 
-    int maxBlockSize = context.getMaxThreadBlockSize();
     int maxSharedMem;
     hipDeviceGetAttribute(&maxSharedMem, hipDeviceAttributeMaxSharedMemoryPerBlock, context.getDevice());
     int maxLocalBuffer = (maxSharedMem/trait->getDataSize())/2;
     int maxShortList = min(3000, max(maxLocalBuffer, HipContext::ThreadBlockSize*context.getNumThreadBlocks()));
     isShortList = (length <= maxShortList);
-    for (rangeKernelSize = 1; rangeKernelSize*2 <= maxBlockSize; rangeKernelSize *= 2)
-        ;
-    positionsKernelSize = rangeKernelSize;
-    sortKernelSize = (isShortList ? rangeKernelSize/2 : rangeKernelSize/4);
+    sortKernelSize = 256;
+    rangeKernelSize = 256;
     if (rangeKernelSize > length)
         rangeKernelSize = length;
-    rangeKernelBlocks = (length + sortKernelSize - 1) / sortKernelSize;
+    rangeKernelBlocks = (length + rangeKernelSize - 1) / rangeKernelSize;
     if (sortKernelSize > maxLocalBuffer)
         sortKernelSize = maxLocalBuffer;
     unsigned int targetBucketSize = sortKernelSize/2;
     unsigned int numBuckets = length/targetBucketSize;
     if (numBuckets < 1)
         numBuckets = 1;
+    // computeBucketPositions is executed as a single work group so larger block size is faster.
+    positionsKernelSize = 1024;
     if (positionsKernelSize > numBuckets)
         positionsKernelSize = numBuckets;
 
@@ -105,7 +104,7 @@ void HipSort::sort(HipArray& data) {
 
         if (dataLength <= HipContext::ThreadBlockSize*context.getNumThreadBlocks()) {
             void* sortArgs[] = {&data.getDevicePointer(), &buckets.getDevicePointer(), &dataLength};
-            context.executeKernel(shortList2Kernel, sortArgs, dataLength, HipContext::ThreadBlockSize, HipContext::ThreadBlockSize*trait->getDataSize());
+            context.executeKernel(shortList2Kernel, sortArgs, dataLength, HipContext::ThreadBlockSize, HipContext::ThreadBlockSize*trait->getKeySize());
             buckets.copyTo(data);
         }
         else {

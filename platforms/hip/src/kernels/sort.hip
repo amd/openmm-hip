@@ -52,7 +52,7 @@ __global__ void sortShortList(DATA_TYPE* __restrict__ data, unsigned int length)
  * work, but also parallelizes much better.
  */
 __global__ void sortShortList2(const DATA_TYPE* __restrict__ dataIn, DATA_TYPE* __restrict__ dataOut, unsigned int length) {
-    HIP_DYNAMIC_SHARED( DATA_TYPE, dataBuffer)
+    HIP_DYNAMIC_SHARED(KEY_TYPE, keyBuffer)
     int globalId = blockDim.x*blockIdx.x+threadIdx.x;
     DATA_TYPE value = dataIn[globalId < length ? globalId : 0];
     KEY_TYPE key = getValue(value);
@@ -61,12 +61,11 @@ __global__ void sortShortList2(const DATA_TYPE* __restrict__ dataIn, DATA_TYPE* 
         int numInBlock = min(static_cast<int>(blockDim.x), static_cast<int>(length-blockStart));
         __syncthreads();
         if (threadIdx.x < numInBlock)
-            dataBuffer[threadIdx.x] = dataIn[blockStart+threadIdx.x];
+            keyBuffer[threadIdx.x] = getValue(dataIn[blockStart+threadIdx.x]);
         __syncthreads();
         for (int i = 0; i < numInBlock; i++) {
-            KEY_TYPE otherKey = getValue(dataBuffer[i]);
-            if (otherKey < key || (otherKey == key && blockStart+i < globalId))
-                count++;
+            KEY_TYPE otherKey = keyBuffer[i];
+            count += (otherKey < key) | ((otherKey == key) & (blockStart+i < globalId));
         }
     }
     if (globalId < length)
@@ -159,7 +158,7 @@ __global__ void assignElementsToBuckets(const DATA_TYPE* __restrict__ data, unsi
  * Sum the bucket sizes to compute the start position of each bucket.  This kernel
  * is executed as a single work group.
  */
-__global__ void computeBucketPositions(unsigned int numBuckets, unsigned int* __restrict__ bucketOffset, unsigned int* __restrict__ counters) {
+__global__ __launch_bounds__(1024) void computeBucketPositions(unsigned int numBuckets, unsigned int* __restrict__ bucketOffset, unsigned int* __restrict__ counters) {
     HIP_DYNAMIC_SHARED( unsigned int, posBuffer)
     unsigned int globalOffset = 0;
     for (unsigned int startBucket = 0; startBucket < numBuckets; startBucket += blockDim.x) {
