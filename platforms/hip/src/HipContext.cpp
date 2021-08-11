@@ -738,11 +738,6 @@ void HipContext::executeKernel(hipFunction_t kernel, void** arguments, int threa
     if (blockSize == -1) {
         blockSize = ThreadBlockSize;
     }
-    else if (blockSize > getMaxThreadBlockSize()) {
-        stringstream str;
-        str<<"Error invoking kernel: block size ("<<blockSize<<") is larger than the maximum block size supported by this device ("<<getMaxThreadBlockSize()<<")";
-        throw OpenMMException(str.str());
-    }
     int gridSize = std::min((threads+blockSize-1)/blockSize, numThreadBlocks);
     hipError_t result = hipModuleLaunchKernel(kernel, gridSize, 1, 1, blockSize, 1, 1, sharedSize, currentStream, arguments, NULL);
     if (result != hipSuccess) {
@@ -755,11 +750,6 @@ void HipContext::executeKernel(hipFunction_t kernel, void** arguments, int threa
 void HipContext::executeKernelFlat(hipFunction_t kernel, void** arguments, int threads, int blockSize, unsigned int sharedSize) {
     if (blockSize == -1) {
         blockSize = ThreadBlockSize;
-    }
-    else if (blockSize > getMaxThreadBlockSize()) {
-        stringstream str;
-        str<<"Error invoking kernel: block size ("<<blockSize<<") is larger than the maximum block size supported by this device ("<<getMaxThreadBlockSize()<<")";
-        throw OpenMMException(str.str());
     }
     int gridSize = (threads+blockSize-1)/blockSize;
     hipError_t result = hipModuleLaunchKernel(kernel, gridSize, 1, 1, blockSize, 1, 1, sharedSize, currentStream, arguments, NULL);
