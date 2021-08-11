@@ -241,6 +241,9 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     numThreadBlocks = numThreadBlocksPerComputeUnit*multiprocessors;
 
     compilationDefines["ENABLE_SHUFFLE"] = "1";
+    compilationDefines["LOAD_TEMP_ATOM"] = "data = LDATA(tbx+j);";
+    compilationDefines["BROADCAST_WARP_ATOM"] = "LDATA(tbx+j) = warpShuffle(data, j);";
+    compilationDefines["SHUFFLE_WARP_ATOM"] = "LDATA(tgx) = warpRotateLeft<TILE_SIZE>(LDATA(tgx));";
 #ifdef __HIP_PLATORM_NVCC_
     if (cudaDriverVersion >= 9000) {
         compilationDefines["SYNC_WARPS"] = "__syncwarp();";
@@ -553,6 +556,7 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     }
     src << "static_assert(sizeof(tileflags)*8==" << tileSize << ",\"tileflags size does not match TILE_SIZE\");\n";
     src << HipKernelSources::common << endl;
+    src << HipKernelSources::intrinsics << endl;
     for (auto& pair : defines) {
         src << "#define " << pair.first;
         if (!pair.second.empty())
