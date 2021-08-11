@@ -89,13 +89,14 @@ public:
 private:
     HipContext& context;
     SortTrait* trait;
+    HipArray counters;
     HipArray dataRange;
     HipArray bucketOfElement;
     HipArray offsetInBucket;
     HipArray bucketOffset;
     HipArray buckets;
     hipFunction_t shortListKernel, shortList2Kernel, computeRangeKernel, assignElementsKernel, computeBucketPositionsKernel, copyToBucketsKernel, sortBucketsKernel;
-    unsigned int dataLength, rangeKernelSize, positionsKernelSize, sortKernelSize;
+    unsigned int dataLength, rangeKernelBlocks, rangeKernelSize, positionsKernelSize, sortKernelSize;
     bool isShortList;
 };
 

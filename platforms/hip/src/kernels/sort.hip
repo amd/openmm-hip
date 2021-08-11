@@ -73,47 +73,69 @@ __global__ void sortShortList2(const DATA_TYPE* __restrict__ dataIn, DATA_TYPE* 
         dataOut[count] = value;
 }
 
-/**
- * Calculate the minimum and maximum value in the array to be sorted.  This kernel
- * is executed as a single work group.
- */
-__global__ void computeRange(const DATA_TYPE* __restrict__ data, unsigned int length, KEY_TYPE* __restrict__ range,
-        unsigned int numBuckets, unsigned int* __restrict__ bucketOffset) {
-    HIP_DYNAMIC_SHARED( KEY_TYPE, minBuffer)
-    KEY_TYPE* maxBuffer = minBuffer+blockDim.x;
-    KEY_TYPE minimum = MAX_KEY;
-    KEY_TYPE maximum = MIN_KEY;
-
-    // Each thread calculates the range of a subset of values.
-
-    for (unsigned int index = threadIdx.x; index < length; index += blockDim.x) {
-        KEY_TYPE value = getValue(data[index]);
-        minimum = min(minimum, value);
-        maximum = max(maximum, value);
-    }
-
-    // Now reduce them.
-
+inline __device__ void reduceMinMax(KEY_TYPE minimum, KEY_TYPE maximum, KEY_TYPE* minBuffer, KEY_TYPE* maxBuffer,
+        volatile KEY_TYPE* minResult, volatile KEY_TYPE* maxResult) {
     minBuffer[threadIdx.x] = minimum;
     maxBuffer[threadIdx.x] = maximum;
     __syncthreads();
     for (unsigned int step = 1; step < blockDim.x; step *= 2) {
-        if (threadIdx.x+step < blockDim.x && threadIdx.x%(2*step) == 0) {
+        if (threadIdx.x+step < blockDim.x & (threadIdx.x&(2*step-1)) == 0) {
             minBuffer[threadIdx.x] = min(minBuffer[threadIdx.x], minBuffer[threadIdx.x+step]);
             maxBuffer[threadIdx.x] = max(maxBuffer[threadIdx.x], maxBuffer[threadIdx.x+step]);
         }
         __syncthreads();
     }
-    minimum = minBuffer[0];
-    maximum = maxBuffer[0];
     if (threadIdx.x == 0) {
-        range[0] = minimum;
-        range[1] = maximum;
+        *minResult = minBuffer[0];
+        *maxResult = maxBuffer[0];
+    }
+}
+
+/**
+ * Calculate the minimum and maximum value in the array to be sorted.
+ */
+__global__ void computeRange(const DATA_TYPE* __restrict__ data, unsigned int length, volatile KEY_TYPE* __restrict__ range,
+        unsigned int numBuckets, unsigned int* __restrict__ bucketOffset, unsigned int* __restrict__ counters) {
+    HIP_DYNAMIC_SHARED(KEY_TYPE, minBuffer)
+    KEY_TYPE* maxBuffer = minBuffer+blockDim.x;
+    KEY_TYPE minimum = MAX_KEY;
+    KEY_TYPE maximum = MIN_KEY;
+
+    __shared__ bool isLastFinishedBlock;
+    if (threadIdx.x == 0) {
+        isLastFinishedBlock = false;
+    }
+
+    // Each thread calculates the range of a subset of values.
+
+    for (unsigned int index = blockDim.x*blockIdx.x+threadIdx.x; index < length; index += blockDim.x*gridDim.x) {
+        KEY_TYPE value = getValue(data[index]);
+        minimum = min(minimum, value);
+        maximum = max(maximum, value);
+    }
+
+    // Now reduce them and save partial results
+
+    reduceMinMax(minimum, maximum, minBuffer, maxBuffer, &range[blockIdx.x * 2 + 0], &range[blockIdx.x * 2 + 1]);
+    __threadfence();
+    if (threadIdx.x == 0) {
+        isLastFinishedBlock = atomicAdd(&counters[0], 1) + 1 == gridDim.x;
+    }
+    __syncthreads();
+
+    // The last block reduce partial results
+
+    if (isLastFinishedBlock) {
+        for (unsigned int index = threadIdx.x; index < gridDim.x; index += blockDim.x) {
+            minimum = min(minimum, range[index * 2 + 0]);
+            maximum = max(maximum, range[index * 2 + 1]);
+        }
+        reduceMinMax(minimum, maximum, minBuffer, maxBuffer, &range[0], &range[1]);
     }
 
     // Clear the bucket counters in preparation for the next kernel.
 
-    for (unsigned int index = threadIdx.x; index < numBuckets; index += blockDim.x)
+    for (unsigned int index = blockDim.x*blockIdx.x+threadIdx.x; index < numBuckets; index += blockDim.x*gridDim.x)
         bucketOffset[index] = 0;
 }
 
@@ -137,7 +159,7 @@ __global__ void assignElementsToBuckets(const DATA_TYPE* __restrict__ data, unsi
  * Sum the bucket sizes to compute the start position of each bucket.  This kernel
  * is executed as a single work group.
  */
-__global__ void computeBucketPositions(unsigned int numBuckets, unsigned int* __restrict__ bucketOffset) {
+__global__ void computeBucketPositions(unsigned int numBuckets, unsigned int* __restrict__ bucketOffset, unsigned int* __restrict__ counters) {
     HIP_DYNAMIC_SHARED( unsigned int, posBuffer)
     unsigned int globalOffset = 0;
     for (unsigned int startBucket = 0; startBucket < numBuckets; startBucket += blockDim.x) {
@@ -162,6 +184,9 @@ __global__ void computeBucketPositions(unsigned int numBuckets, unsigned int* __
         if (globalIndex < numBuckets)
             bucketOffset[globalIndex] = posBuffer[threadIdx.x]+globalOffset;
         globalOffset += posBuffer[blockDim.x-1];
+    }
+    if (threadIdx.x == 0) {
+        counters[0] = 0;
     }
 }
 

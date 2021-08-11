@@ -67,6 +67,7 @@ HipSort::HipSort(HipContext& context, SortTrait* trait, unsigned int length) : c
     sortKernelSize = (isShortList ? rangeKernelSize/2 : rangeKernelSize/4);
     if (rangeKernelSize > length)
         rangeKernelSize = length;
+    rangeKernelBlocks = (length + sortKernelSize - 1) / sortKernelSize;
     if (sortKernelSize > maxLocalBuffer)
         sortKernelSize = maxLocalBuffer;
     unsigned int targetBucketSize = sortKernelSize/2;
@@ -79,7 +80,10 @@ HipSort::HipSort(HipContext& context, SortTrait* trait, unsigned int length) : c
     // Create workspace arrays.
 
     if (!isShortList) {
-        dataRange.initialize(context, 2, trait->getKeySize(), "sortDataRange");
+        counters.initialize<unsigned int>(context, 1, "counters");
+        unsigned int zero = 0;
+        counters.upload(&zero);
+        dataRange.initialize(context, 2*rangeKernelBlocks, trait->getKeySize(), "sortDataRange");
         bucketOffset.initialize<uint1>(context, numBuckets, "bucketOffset");
         bucketOfElement.initialize<uint1>(context, length, "bucketOfElement");
         offsetInBucket.initialize<uint1>(context, length, "offsetInBucket");
@@ -113,8 +117,8 @@ void HipSort::sort(HipArray& data) {
         // Compute the range of data values.
 
         unsigned int numBuckets = bucketOffset.getSize();
-        void* rangeArgs[] = {&data.getDevicePointer(), &dataLength, &dataRange.getDevicePointer(), &numBuckets, &bucketOffset.getDevicePointer()};
-        context.executeKernel(computeRangeKernel, rangeArgs, rangeKernelSize, rangeKernelSize, 2*rangeKernelSize*trait->getKeySize());
+        void* rangeArgs[] = {&data.getDevicePointer(), &dataLength, &dataRange.getDevicePointer(), &numBuckets, &bucketOffset.getDevicePointer(), &counters.getDevicePointer()};
+        context.executeKernel(computeRangeKernel, rangeArgs, rangeKernelBlocks*rangeKernelSize, rangeKernelSize, 2*rangeKernelSize*trait->getKeySize());
 
         // Assign array elements to buckets.
 
@@ -124,7 +128,7 @@ void HipSort::sort(HipArray& data) {
 
         // Compute the position of each bucket.
 
-        void* computeArgs[] = {&numBuckets, &bucketOffset.getDevicePointer()};
+        void* computeArgs[] = {&numBuckets, &bucketOffset.getDevicePointer(), &counters.getDevicePointer()};
         context.executeKernel(computeBucketPositionsKernel, computeArgs, positionsKernelSize, positionsKernelSize, positionsKernelSize*sizeof(int));
 
         // Copy the data into the buckets.
