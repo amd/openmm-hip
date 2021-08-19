@@ -210,6 +210,7 @@ __global__ void sortBuckets(DATA_TYPE* __restrict__ data, const DATA_TYPE* __res
         unsigned int startIndex = (index == 0 ? 0 : bucketOffset[index-1]);
         unsigned int endIndex = bucketOffset[index];
         unsigned int length = endIndex-startIndex;
+        unsigned int lenghtNextPow2 = length <= 2 ? length : (1 << (32 - __clz(length - 1)));
         if (length <= blockDim.x) {
             // Load the data into local memory.
 
@@ -254,16 +255,14 @@ __global__ void sortBuckets(DATA_TYPE* __restrict__ data, const DATA_TYPE* __res
 
             // Perform a bitonic sort in global memory.
 
-            for (unsigned int k = 2; k < 2*length; k *= 2) {
+            for (unsigned int k = 2; k <= lenghtNextPow2; k *= 2) {
                 for (unsigned int j = k/2; j > 0; j /= 2) {
                     for (unsigned int i = threadIdx.x; i < length; i += blockDim.x) {
                         int ixj = i^j;
                         if (ixj > i && ixj < length) {
                             DATA_TYPE value1 = data[startIndex+i];
                             DATA_TYPE value2 = data[startIndex+ixj];
-                            bool ascending = ((i&k) == 0);
-                            for (unsigned int mask = k*2; mask < 2*length; mask *= 2)
-                                ascending = ((i&mask) == 0 ? !ascending : ascending);
+                            bool ascending = (__popc(~i & (lenghtNextPow2 - k)) & 1) == 0;
                             KEY_TYPE lowKey  = (ascending ? getValue(value1) : getValue(value2));
                             KEY_TYPE highKey = (ascending ? getValue(value2) : getValue(value1));
                             if (lowKey > highKey) {
