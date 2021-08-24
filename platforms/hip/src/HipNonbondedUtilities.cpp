@@ -74,7 +74,7 @@ HipNonbondedUtilities::HipNonbondedUtilities(HipContext& context) : context(cont
     CHECK_RESULT(hipDeviceGetAttribute(&multiprocessors, hipDeviceAttributeMultiprocessorCount, context.getDevice()));
     CHECK_RESULT(hipEventCreateWithFlags(&downloadCountEvent, 0));
     CHECK_RESULT(hipHostMalloc((void**) &pinnedCountBuffer, 2*sizeof(int), hipHostMallocPortable));
-    numForceThreadBlocks = 4*multiprocessors;
+    numForceThreadBlocks = 5*multiprocessors;
     forceThreadBlockSize = 256;
     setKernelSource(HipKernelSources::nonbonded);
 }
@@ -428,7 +428,7 @@ void HipNonbondedUtilities::computeInteractions(int forceGroups, bool includeFor
         hipFunction_t& kernel = (includeForces ? (includeEnergy ? kernels.forceEnergyKernel : kernels.forceKernel) : kernels.energyKernel);
         if (kernel == NULL)
             kernel = createInteractionKernel(kernels.source, parameters, arguments, true, true, forceGroups, includeForces, includeEnergy);
-        context.executeKernel(kernel, &forceArgs[0], numForceThreadBlocks*forceThreadBlockSize, forceThreadBlockSize);
+        context.executeKernelFlat(kernel, &forceArgs[0], numForceThreadBlocks*forceThreadBlockSize, forceThreadBlockSize);
     }
     if (useCutoff && numTiles > 0) {
         hipEventSynchronize(downloadCountEvent);
@@ -505,6 +505,7 @@ void HipNonbondedUtilities::createKernelsForGroups(int groups) {
         defines["TILE_SIZE"] = context.intToString(context.getTileSize());
         defines["NUM_BLOCKS"] = context.intToString(context.getNumAtomBlocks());
         defines["NUM_ATOMS"] = context.intToString(context.getNumAtoms());
+        defines["PADDED_NUM_ATOMS"] = context.intToString(context.getPaddedNumAtoms());
         defines["PADDING"] = context.doubleToString(paddedCutoff-cutoff);
         defines["PADDED_CUTOFF"] = context.doubleToString(paddedCutoff);
         defines["PADDED_CUTOFF_SQUARED"] = context.doubleToString(paddedCutoff*paddedCutoff);

@@ -118,9 +118,7 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
 
     // First loop: process tiles that contain exclusions.
 
-    const unsigned int firstExclusionTile = FIRST_EXCLUSION_TILE+warp*(LAST_EXCLUSION_TILE-FIRST_EXCLUSION_TILE)/totalWarps;
-    const unsigned int lastExclusionTile = FIRST_EXCLUSION_TILE+(warp+1)*(LAST_EXCLUSION_TILE-FIRST_EXCLUSION_TILE)/totalWarps;
-    for (int pos = firstExclusionTile; pos < lastExclusionTile; pos++) {
+    for (int pos = FIRST_EXCLUSION_TILE+warp; pos < LAST_EXCLUSION_TILE; pos+=totalWarps) {
         const int2 tileIndices = exclusionTiles[pos];
         const unsigned int x = tileIndices.x;
         const unsigned int y = tileIndices.y;
@@ -157,7 +155,7 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
                 real3 dEdR2 = make_real3(0);
 #endif
 #ifdef USE_EXCLUSIONS
-                bool isExcluded = (atom1 >= NUM_ATOMS || atom2 >= NUM_ATOMS || !(excl & 1));
+                bool isExcluded = !(atom1 < NUM_ATOMS && atom2 < NUM_ATOMS && ((unsigned int)excl & 1));
 #endif
                 real tempEnergy = 0.0f;
                 const real interactionScale = 0.5f;
@@ -211,7 +209,7 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
                 real3 dEdR2 = make_real3(0);
 #endif
 #ifdef USE_EXCLUSIONS
-                bool isExcluded = (atom1 >= NUM_ATOMS || atom2 >= NUM_ATOMS || !(excl & 1));
+                bool isExcluded = !(atom1 < NUM_ATOMS && atom2 < NUM_ATOMS && ((unsigned int)excl & 1));
 #endif
                 real tempEnergy = 0.0f;
                 const real interactionScale = 1.0f;
@@ -263,25 +261,29 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
     // Second loop: tiles without exclusions, either from the neighbor list (with cutoff) or just enumerating all
     // of them (no cutoff).
 
+    // atomIndices can probably be shuffled as well
+    // but it probably wouldn't make things any faster
+    __shared__ int atomIndices[THREAD_BLOCK_SIZE];
+
 #ifdef USE_CUTOFF
     const unsigned int numTiles = interactionCount[0];
     if (numTiles > maxTiles)
         return; // There wasn't enough memory for the neighbor list.
-    int pos = (int) (warp*(long long)numTiles/totalWarps);
-    int end = (int) ((warp+1)*(long long)numTiles/totalWarps);
+    for (unsigned int pos0 = warp; pos0 < LAST_EXCLUSION_TILE+numTiles; pos0+=totalWarps) {
+        // Skip warps that may be still busy in the first loop
+        if (pos0 < LAST_EXCLUSION_TILE) {
+            continue;
+        }
+        const unsigned int pos = pos0-LAST_EXCLUSION_TILE;
 #else
     int pos = (int) (startTileIndex+warp*numTileIndices/totalWarps);
     int end = (int) (startTileIndex+(warp+1)*numTileIndices/totalWarps);
-#endif
     int skipBase = 0;
     int currentSkipIndex = tbx;
-    // atomIndices can probably be shuffled as well
-    // but it probably wouldn't make things any faster
-    __shared__ int atomIndices[THREAD_BLOCK_SIZE];
     __shared__ volatile int skipTiles[THREAD_BLOCK_SIZE];
     skipTiles[threadIdx.x] = -1;
-
-    while (pos < end) {
+    for (; pos < end; pos++) {
+#endif
         const bool hasExclusions = false;
         real3 force = make_real3(0);
         bool includeTile = true;
@@ -324,7 +326,6 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
             // Load atom data for this tile.
             real4 posq1 = posq[atom1];
             LOAD_ATOM1_PARAMETERS
-            //const unsigned int localAtomIndex = threadIdx.x;
 #ifdef USE_CUTOFF
             unsigned int j = interactingAtoms[pos*TILE_SIZE+tgx];
 #else
@@ -369,7 +370,7 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
                     real3 dEdR2 = make_real3(0);
 #endif
 #ifdef USE_EXCLUSIONS
-                    bool isExcluded = (atom1 >= NUM_ATOMS || atom2 >= NUM_ATOMS);
+                    bool isExcluded = !(atom1 < NUM_ATOMS && atom2 < NUM_ATOMS);
 #endif
                     real tempEnergy = 0.0f;
                     const real interactionScale = 1.0f;
@@ -420,7 +421,7 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
                     real3 dEdR2 = make_real3(0);
 #endif
 #ifdef USE_EXCLUSIONS
-                    bool isExcluded = (atom1 >= NUM_ATOMS || atom2 >= NUM_ATOMS);
+                    bool isExcluded = !(atom1 < NUM_ATOMS && atom2 < NUM_ATOMS);
 #endif
                     real tempEnergy = 0.0f;
                     const real interactionScale = 1.0f;
@@ -466,7 +467,6 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
             }
 #endif
         }
-        pos++;
     }
 
     // Third loop: single pairs that aren't part of a tile.
@@ -483,11 +483,9 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
         real4 posq2 = posq[atom2];
         LOAD_ATOM1_PARAMETERS
         int j = atom2;
-        atom2 = threadIdx.x;
         DECLARE_LOCAL_PARAMETERS
         LOAD_LOCAL_PARAMETERS_FROM_GLOBAL
         LOAD_ATOM2_PARAMETERS
-        atom2 = pair.y;
         real3 delta = make_real3(posq2.x-posq1.x, posq2.y-posq1.y, posq2.z-posq1.z);
 #ifdef USE_PERIODIC
         APPLY_PERIODIC_TO_DELTA(delta)
