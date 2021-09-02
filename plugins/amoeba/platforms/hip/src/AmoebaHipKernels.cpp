@@ -28,7 +28,6 @@
   #define _USE_MATH_DEFINES // Needed to get M_PI
 #endif
 #include "AmoebaHipKernels.h"
-#include "HipAmoebaKernelSources.h"
 #include "openmm/internal/ContextImpl.h"
 #include "openmm/internal/AmoebaGeneralizedKirkwoodForceImpl.h"
 #include "openmm/internal/AmoebaMultipoleForceImpl.h"
