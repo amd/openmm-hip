@@ -55,11 +55,7 @@
 #include <sstream>
 #include <typeinfo>
 #include <sys/stat.h>
-#ifdef __HIP_PLATORM_NVCC__
-#include <cudaProfiler.h>
-#else
 #include <roctracer/roctracer_ext.h>
-#endif
 #include <unistd.h>
 
 
@@ -98,13 +94,6 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     int res = std::system(testCompilerCommand.c_str());
     struct stat info;
     isHipccAvailable = (res == 0 && stat(tempDir.c_str(), &info) == 0);
-    int cudaDriverVersion;
-    hipDriverGetVersion(&cudaDriverVersion);
-#ifdef __HIP_PLATORM_NVCC__
-    // AMD GPU compiler is clang-based, which is a single-source model.
-    if (hostCompiler.size() > 0)
-        this->compiler = compiler+" --compiler-bindir "+hostCompiler;
-#endif
     if (!hasInitializedHip) {
         CHECK_RESULT2(hipInit(0), "Error initializing HIP");
         hasInitializedHip = true;
@@ -147,11 +136,7 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
         for (int i = 0; i < static_cast<int>(devicePrecedence.size()); i++) {
             int trialDeviceIndex = devicePrecedence[i];
             CHECK_RESULT(hipDeviceGet(&device, trialDeviceIndex));
-#ifdef __HIP_PLATORM_NVCC__
-            defaultOptimizationOptions = "--use_fast_math";
-#else
             defaultOptimizationOptions = "-ffast-math -munsafe-fp-atomics -Wall";
-#endif
             // try setting device
             if (hipSetDevice(device) == hipSuccess) {
                 // and set flags
@@ -189,36 +174,11 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     this->tileSize = simdWidth;
     this->sharedMemPerBlock = props.sharedMemPerBlock;
 
-#ifdef __HIP_PLATORM_NVCC__
-    int major, minor;
-    CHECK_RESULT(hipDeviceGetAttribute(&major, hipDeviceAttributeComputeCapabilityMajor, device));
-    CHECK_RESULT(hipDeviceGetAttribute(&minor, hipDeviceAttributeComputeCapabilityMinor, device));
-    int numThreadBlocksPerComputeUnit = (major == 6 ? 4 : 6);
-    if (cudaDriverVersion < 7000) {
-        // This is a workaround to support GTX 980 with CUDA 6.5.  It reports
-        // its compute capability as 5.2, but the compiler doesn't support
-        // anything beyond 5.0.
-        if (major == 5)
-            minor = 0;
-    }
-    if (cudaDriverVersion < 8000) {
-        // This is a workaround to support Pascal with CUDA 7.5.  It reports
-        // its compute capability as 6.x, but the compiler doesn't support
-        // anything beyond 5.3.
-        if (major == 6) {
-            major = 5;
-            minor = 3;
-        }
-    }
-    gpuArchitecture = intToString(major)+intToString(minor);
-    computeCapability = major+0.1*minor;
-#else
     stringstream ss;
     ss << string("gfx") << to_string(props.gcnArch);
     gpuArchitecture = ss.str();
-    // todo: find a good value here
+    // HIP-TODO: find a good value here
     int numThreadBlocksPerComputeUnit = 6;
-#endif
 
     contextIsValid = true;
     // note: this is a no-op on AMD GPUs
@@ -244,18 +204,6 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     compilationDefines["LOAD_TEMP_ATOM"] = "data = LDATA(tbx+j);";
     compilationDefines["BROADCAST_WARP_ATOM"] = "LDATA(tbx+j) = warpShuffle(data, j);";
     compilationDefines["SHUFFLE_WARP_ATOM"] = "LDATA(tgx) = warpRotateLeft<TILE_SIZE>(LDATA(tgx));";
-#ifdef __HIP_PLATORM_NVCC_
-    if (cudaDriverVersion >= 9000) {
-        compilationDefines["SYNC_WARPS"] = "__syncwarp();";
-        compilationDefines["SHFL(var, srcLane)"] = "__shfl_sync(0xffffffff, var, srcLane);";
-        compilationDefines["BALLOT(var)"] = "__ballot_sync(0xffffffff, var);";
-    }
-    else {
-        compilationDefines["SYNC_WARPS"] = "";
-        compilationDefines["SHFL(var, srcLane)"] = "__shfl(var, srcLane);";
-        compilationDefines["BALLOT(var)"] = "__ballot(var);";
-    }
-#else
     // GCN hardware is more like CUDA-8, w/ no independent forward progress
     // or *_sync primatives
     compilationDefines["SYNC_WARPS"] = "";
@@ -271,7 +219,6 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
         compilationDefines["BALLOT(var)"] = "__ballot((var) != 0);";
     else
         compilationDefines["BALLOT(var)"] = "(tileflags)(__ballot((var) != 0) >> (threadIdx.x & ((" + intToString(simdWidth) + " - 1) ^ (" + intToString(tileSize) + " - 1))));";
-#endif
     if (useDoublePrecision) {
         posq.initialize<double4>(*this, paddedNumAtoms, "posq");
         velm.initialize<double4>(*this, paddedNumAtoms, "velm");
@@ -341,7 +288,6 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     compilationDefines["ATAN"] = useDoublePrecision ? "atan" : "atanf";
     compilationDefines["ERF"] = useDoublePrecision ? "erf" : "erff";
     compilationDefines["ERFC"] = useDoublePrecision ? "erfc" : "erfcf";
-    compilationDefines["MAX"] = useDoublePrecision ? "fmax" : "fmaxf";
 
     // Set defines for applying periodic boundary conditions.
 
@@ -590,23 +536,14 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     tempFileName << "openmmTempKernel" << this; // Include a pointer to this context as part of the filename to avoid collisions.
     tempFileName << "_" << getpid();
     string inputFile = (tempDir+tempFileName.str()+".hip.cpp");
-#ifdef __HIP_PLATORM_NVCC__
-    string outputFile = (tempDir+tempFileName.str()+".ptx");
-#else
     string outputFile = (tempDir+tempFileName.str()+".hsaco");
-#endif
     string logFile = (tempDir+tempFileName.str()+".log");
     int res = 0;
 
     // If the runtime compiler plugin is available, use it.
 
     if (hasCompilerKernel) {
-#ifdef __HIP_PLATORM_NVCC__
-        // HIP-TODO: remove?
-        string ptx = compilerKernel.getAs<HipCompilerKernel>().createModule(src.str(), "-arch=compute_"+gpuArchitecture+" "+options, *this);
-#else
         vector<char> ptx = compilerKernel.getAs<HipCompilerKernel>().createModule(src.str(), options, *this);
-#endif
         // If possible, write the PTX out to a temporary file so we can cache it for later use.
 
         bool wroteCache = false;
@@ -633,13 +570,8 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
         ofstream out(inputFile.c_str());
         out << src.str();
         out.close();
-#ifdef __HIP_PLATORM_NVCC__
-        string command = compiler+" --ptx --machine "+bits+" -arch=sm_"+gpuArchitecture+" -o \""+outputFile+"\" "+options+" \""+inputFile+"\" 2> \""+logFile+"\"";
-        res = std::system(command.c_str());
-#else
         string command = compiler + " --genco --amdgpu-target=" + gpuArchitecture + " " + options + " -o \""+outputFile+"\" " + " \""+inputFile+"\" 2> \""+logFile+"\"";
         res = std::system(command.c_str());
-#endif
     }
     try {
         if (res != 0) {
@@ -893,23 +825,9 @@ vector<int> HipContext::getDevicePrecedence() {
     for (int i = 0; i < numDevices; i++) {
         CHECK_RESULT(hipGetDeviceProperties(&thisDevice, i));
         int clock, multiprocessors, speed;
-#ifdef  __HIP_PLATORM_NVCC__
-        // NVIDIA GPU
-        int major, minor;
-        major = thisDevice.hipDeviceAttributeComputeCapabilityMajor;
-        minor = thisDevice.hipDeviceAttributeComputeCapabilityMinor;
-        if (major == 1 && minor < 2)
-            continue;
-
-        if ((useDoublePrecision || useMixedPrecision) && (major+0.1*minor < 1.3))
-            continue;
-
-#else
         // AMD GPU
-
-        // gcn arch is avialable if needed, however...
+        // gcn arch is available if needed, however...
         int major = thisDevice.gcnArch;
-#endif
         clock = thisDevice.clockRate;
         multiprocessors = thisDevice.multiProcessorCount;
         speed = clock*multiprocessors;

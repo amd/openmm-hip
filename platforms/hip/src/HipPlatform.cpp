@@ -271,12 +271,6 @@ HipPlatform::PlatformData::PlatformData(ContextImpl* context, const System& syst
         CHECK_RESULT(hipDeviceGetName(name, 1000, contexts[i]->getDevice()), "Error querying device name");
         deviceName << name;
     }
-#ifdef __HIP_PLATFORM_NVCC__
-    // hipDeviceSetLimit is not implemented in HIP
-    size_t printfsize;
-    hipDeviceGetLimit(&printfsize, CU_LIMIT_PRINTF_FIFO_SIZE);
-    cudaDeviceSetLimit(CU_LIMIT_PRINTF_FIFO_SIZE, 10*printfsize);
-#endif
 
     useCpuPme = (cpuPmeProperty == "true" && !contexts[0]->getUseDoublePrecision());
     disablePmeStream = (pmeStreamProperty == "true");

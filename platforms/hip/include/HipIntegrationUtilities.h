@@ -34,9 +34,6 @@
 #include "openmm/common/IntegrationUtilities.h"
 #include "openmm/common/windowsExportCommon.h"
 #include <hip/hip_runtime.h>
-#ifdef __HIP_PLATFORM_NVCC__
-#include <builtin_types.h>
-#endif
 
 namespace OpenMM {
 

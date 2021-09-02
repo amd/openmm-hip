@@ -50,10 +50,6 @@
 #endif
 #include <pthread.h>
 #include <hip/hip_runtime.h>
-#ifdef __HIP_PLATFORM_NVCC__
-#include <builtin_types.h>
-#include <vector_functions.h>
-#endif
 #include "openmm/common/windowsExportCommon.h"
 #include "HipArray.h"
 #include "HipBondedUtilities.h"

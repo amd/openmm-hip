@@ -57,12 +57,7 @@ extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, 
 #ifdef USE_PERIODIC
             APPLY_PERIODIC_TO_DELTA(delta)
 #endif
-#ifndef __HIP__
-            // This is only required for ROCm <= 3.3
-            center.w = MAX(center.w, delta.x*delta.x+delta.y*delta.y+delta.z*delta.z);
-#else
             center.w = max(center.w, delta.x*delta.x+delta.y*delta.y+delta.z*delta.z);
-#endif
         }
         center.w = sqrt(center.w);
         blockBoundingBox[index] = blockSize;
@@ -283,16 +278,9 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
                 APPLY_PERIODIC_TO_DELTA(blockDelta)
     #endif
                 includeBlock2 &= (blockDelta.x*blockDelta.x+blockDelta.y*blockDelta.y+blockDelta.z*blockDelta.z < (PADDED_CUTOFF+blockCenterX.w+blockCenterY.w)*(PADDED_CUTOFF+blockCenterX.w+blockCenterY.w));
-    #ifndef __HIP__
-                // This is only required for ROCm <= 3.3
-                blockDelta.x = MAX(0.0f, fabs(blockDelta.x)-blockSizeX.x-blockSizeY.x);
-                blockDelta.y = MAX(0.0f, fabs(blockDelta.y)-blockSizeX.y-blockSizeY.y);
-                blockDelta.z = MAX(0.0f, fabs(blockDelta.z)-blockSizeX.z-blockSizeY.z);
-    #else
                 blockDelta.x = max(0.0f, fabs(blockDelta.x)-blockSizeX.x-blockSizeY.x);
                 blockDelta.y = max(0.0f, fabs(blockDelta.y)-blockSizeX.y-blockSizeY.y);
                 blockDelta.z = max(0.0f, fabs(blockDelta.z)-blockSizeX.z-blockSizeY.z);
-    #endif
                 includeBlock2 &= (blockDelta.x*blockDelta.x+blockDelta.y*blockDelta.y+blockDelta.z*blockDelta.z < PADDED_CUTOFF_SQUARED);
     #ifdef TRICLINIC
                 // The calculation to find the nearest periodic copy is only guaranteed to work if the nearest copy is less than half a box width away.

@@ -31,7 +31,7 @@ warpMoveDpp(const T& input) {
     T output;
     #pragma unroll
     for(int i = 0; i < words_no; i++) {
-        const size_t s = std::min(sizeof(int), sizeof(T) - i * sizeof(int));
+        const size_t s = min(sizeof(int), sizeof(T) - i * sizeof(int));
         int word;
         __builtin_memcpy(&word, reinterpret_cast<const char*>(&input) + i * sizeof(int), s);
         word = __builtin_amdgcn_update_dpp(
@@ -70,7 +70,7 @@ warpShuffle(const T& input, const int src_lane) {
     T output;
     #pragma unroll
     for(int i = 0; i < words_no; i++) {
-        const size_t s = std::min(sizeof(int), sizeof(T) - i * sizeof(int));
+        const size_t s = min(sizeof(int), sizeof(T) - i * sizeof(int));
         int word;
         __builtin_memcpy(&word, reinterpret_cast<const char*>(&input) + i * sizeof(int), s);
         word = SHFL(word, src_lane);
