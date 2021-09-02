@@ -150,7 +150,7 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
 #ifdef __HIP_PLATORM_NVCC__
             defaultOptimizationOptions = "--use_fast_math";
 #else
-            defaultOptimizationOptions = "-ffast-math -Wall";
+            defaultOptimizationOptions = "-ffast-math -munsafe-fp-atomics -Wall";
 #endif
             // try setting device
             if (hipSetDevice(device) == hipSuccess) {
