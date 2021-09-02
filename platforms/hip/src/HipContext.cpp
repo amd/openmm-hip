@@ -443,10 +443,15 @@ hipModule_t HipContext::createModule(const string source, const char* optimizati
 }
 
 hipModule_t HipContext::createModule(const string source, const map<string, string>& defines, const char* optimizationFlags) {
+    const char* saveTempsEnv = getenv("OPENMM_SAVE_TEMPS");
+    bool saveTemps = saveTempsEnv != nullptr;
     string bits = intToString(8*sizeof(void*));
     string options = (optimizationFlags == NULL ? defaultOptimizationOptions : string(optimizationFlags));
     if (getMaxThreadBlockSize() < 1024) {
         options += " --gpu-max-threads-per-block=" + std::to_string(getMaxThreadBlockSize());
+    }
+    if (saveTemps) {
+        options += " -save-temps=obj";
     }
     stringstream src;
     if (!options.empty())
@@ -520,12 +525,12 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     sha1.Final();
     UINT_8 hash[20];
     sha1.GetHash(hash);
-    stringstream cacheFile;
-    cacheFile << cacheDir;
-    cacheFile.flags(ios::hex);
+    stringstream cacheHash;
+    cacheHash.flags(ios::hex);
     for (int i = 0; i < 20; i++)
-        cacheFile << setw(2) << setfill('0') << (int) hash[i];
-    cacheFile << '_' << gpuArchitecture << '_' << bits;
+        cacheHash << setw(2) << setfill('0') << (int) hash[i];
+    stringstream cacheFile;
+    cacheFile << cacheDir << cacheHash.str() << '_' << gpuArchitecture << '_' << bits;
     hipModule_t module;
     if (hipModuleLoad(&module, cacheFile.str().c_str()) == hipSuccess)
         return module;
@@ -533,11 +538,22 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     // Select names for the various temporary files.
 
     stringstream tempFileName;
-    tempFileName << "openmmTempKernel" << this; // Include a pointer to this context as part of the filename to avoid collisions.
-    tempFileName << "_" << getpid();
-    string inputFile = (tempDir+tempFileName.str()+".hip.cpp");
-    string outputFile = (tempDir+tempFileName.str()+".hsaco");
-    string logFile = (tempDir+tempFileName.str()+".log");
+    if (saveTemps) {
+        tempFileName << saveTempsEnv;
+        const char* saveTempsPrefixEnv = getenv("OPENMM_SAVE_TEMPS_PREFIX");
+        if (saveTempsPrefixEnv) {
+            tempFileName << saveTempsPrefixEnv;
+        }
+        tempFileName << cacheHash.str();
+    }
+    else {
+        tempFileName << tempDir;
+        tempFileName << "openmmTempKernel" << this; // Include a pointer to this context as part of the filename to avoid collisions.
+        tempFileName << "_" << getpid();
+    }
+    string inputFile = (tempFileName.str()+".hip.cpp");
+    string outputFile = (tempFileName.str()+".hsaco");
+    string logFile = (tempFileName.str()+".log");
     int res = 0;
 
     // If the runtime compiler plugin is available, use it.
@@ -596,20 +612,16 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
             m<<"Error loading HIP module: "<<getErrorString(result)<<" ("<<result<<")";
             throw OpenMMException(m.str());
         }
-        const char* save = getenv("OPENMM_SAVE_TEMPS");
-        bool savetemps = save != nullptr;
-        if (!savetemps) {
+        if (!saveTemps) {
             remove(inputFile.c_str());
             remove(logFile.c_str());
         }
-        if (rename(outputFile.c_str(), cacheFile.str().c_str()) != 0 && !savetemps)
+        if (rename(outputFile.c_str(), cacheFile.str().c_str()) != 0 && !saveTemps)
             remove(outputFile.c_str());
         return module;
     }
     catch (...) {
-        const char* save = getenv("OPENMM_SAVE_TEMPS");
-        bool savetemps = save != nullptr;
-        if (!savetemps) {
+        if (!saveTemps) {
             remove(inputFile.c_str());
             remove(outputFile.c_str());
             remove(logFile.c_str());
