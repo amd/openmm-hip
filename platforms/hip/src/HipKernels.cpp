@@ -559,6 +559,29 @@ HipCalcNonbondedForceKernel::~HipCalcNonbondedForceKernel() {
     }
 }
 
+static int findLegalFFTDimension(int minimum, bool useHipFFT) {
+    if (!useHipFFT) {
+        return HipFFT3D::findLegalDimension(minimum);
+    }
+
+    // HIP-TODO: rocFFT calculates incorrect results for some FFT sizes. It looks like factor == 7 is buggy.
+    // Remove this workaround when it's fixed.
+    if (minimum < 1)
+        return 1;
+    while (true) {
+        // Attempt to factor the current value.
+
+        int unfactored = minimum;
+        for (int factor = 2; factor < 6/* 8 */; factor++) {
+            while (unfactored > 1 && unfactored%factor == 0)
+                unfactored /= factor;
+        }
+        if (unfactored == 1)
+            return minimum;
+        minimum++;
+    }
+}
+
 void HipCalcNonbondedForceKernel::initialize(const System& system, const NonbondedForce& force) {
     cu.setAsCurrent();
     int forceIndex;
@@ -696,16 +719,18 @@ void HipCalcNonbondedForceKernel::initialize(const System& system, const Nonbond
     else if (((nonbondedMethod == PME || nonbondedMethod == LJPME) && hasCoulomb) || doLJPME) {
         // Compute the PME parameters.
 
+        useHipFFT = true;
+
         NonbondedForceImpl::calcPMEParameters(system, force, alpha, gridSizeX, gridSizeY, gridSizeZ, false);
-        gridSizeX = HipFFT3D::findLegalDimension(gridSizeX);
-        gridSizeY = HipFFT3D::findLegalDimension(gridSizeY);
-        gridSizeZ = HipFFT3D::findLegalDimension(gridSizeZ);
+        gridSizeX = findLegalFFTDimension(gridSizeX, useHipFFT);
+        gridSizeY = findLegalFFTDimension(gridSizeY, useHipFFT);
+        gridSizeZ = findLegalFFTDimension(gridSizeZ, useHipFFT);
         if (doLJPME) {
             NonbondedForceImpl::calcPMEParameters(system, force, dispersionAlpha, dispersionGridSizeX,
                                                   dispersionGridSizeY, dispersionGridSizeZ, true);
-            dispersionGridSizeX = HipFFT3D::findLegalDimension(dispersionGridSizeX);
-            dispersionGridSizeY = HipFFT3D::findLegalDimension(dispersionGridSizeY);
-            dispersionGridSizeZ = HipFFT3D::findLegalDimension(dispersionGridSizeZ);
+            dispersionGridSizeX = findLegalFFTDimension(dispersionGridSizeX, useHipFFT);
+            dispersionGridSizeY = findLegalFFTDimension(dispersionGridSizeY, useHipFFT);
+            dispersionGridSizeZ = findLegalFFTDimension(dispersionGridSizeZ, useHipFFT);
         }
 
         defines["EWALD_ALPHA"] = cu.doubleToString(alpha);
@@ -725,9 +750,7 @@ void HipCalcNonbondedForceKernel::initialize(const System& system, const Nonbond
                 for (int i = 0; i < numParticles; i++)
                     ewaldSelfEnergy += baseParticleParamVec[i].z*pow(baseParticleParamVec[i].y*dispersionAlpha, 6)/3.0;
             }
-            char deviceName[100];
-            hipDeviceGetName(deviceName, 100, cu.getDevice());
-            usePmeStream = (!cu.getPlatformData().disablePmeStream && !cu.getPlatformData().useCpuPme && string(deviceName) != "GeForce GTX 980"); // Using a separate stream is slower on GTX 980
+            usePmeStream = (!cu.getPlatformData().disablePmeStream && !cu.getPlatformData().useCpuPme);
             map<string, string> pmeDefines;
             pmeDefines["PME_ORDER"] = cu.intToString(PmeOrder);
             pmeDefines["NUM_ATOMS"] = cu.intToString(numParticles);
@@ -822,9 +845,6 @@ void HipCalcNonbondedForceKernel::initialize(const System& system, const Nonbond
                 pmeEnergyBuffer.initialize(cu, cu.getNumThreadBlocks()*HipContext::ThreadBlockSize, energyElementSize, "pmeEnergyBuffer");
                 cu.clearBuffer(pmeEnergyBuffer);
                 sort = new HipSort(cu, new SortTrait(), cu.getNumAtoms());
-                int cufftVersion;
-                hipfftGetVersion(&cufftVersion);
-                useHipFFT = (cufftVersion >= 7050); // There was a critical bug in version 7.0
                 if (useHipFFT) {
                     hipfftResult result = hipfftPlan3d(&fftForward, gridSizeX, gridSizeY, gridSizeZ, cu.getUseDoublePrecision() ? HIPFFT_D2Z : HIPFFT_R2C);
                     if (result != HIPFFT_SUCCESS)
@@ -852,7 +872,7 @@ void HipCalcNonbondedForceKernel::initialize(const System& system, const Nonbond
                 // Prepare for doing PME on its own stream.
 
                 if (usePmeStream) {
-                    hipStreamCreateWithFlags(&pmeStream, hipStreamNonBlocking);
+                    CHECK_RESULT(hipStreamCreateWithFlags(&pmeStream, hipStreamNonBlocking), "Error creating stream for NonbondedForce");
                     if (useHipFFT) {
                         hipfftSetStream(fftForward, pmeStream);
                         hipfftSetStream(fftBackward, pmeStream);
