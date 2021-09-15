@@ -36,7 +36,6 @@
 #include "openmm/internal/AmoebaVdwForceImpl.h"
 #include "openmm/internal/NonbondedForceImpl.h"
 #include "HipBondedUtilities.h"
-#include "HipFFT3D.h"
 #include "HipForceInfo.h"
 #include "HipKernelSources.h"
 #include "SimTKOpenMMRealType.h"

@@ -26,7 +26,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.      *
  * -------------------------------------------------------------------------- */
 
-#include "HipFFT3D.h"
+#include "HipFFTImplFFT3D.h"
 #include "HipContext.h"
 #include "HipKernelSources.h"
 #include "SimTKOpenMMRealType.h"
@@ -37,8 +37,8 @@
 using namespace OpenMM;
 using namespace std;
 
-HipFFT3D::HipFFT3D(HipContext& context, int xsize, int ysize, int zsize, bool realToComplex) :
-        context(context), xsize(xsize), ysize(ysize), zsize(zsize) {
+HipFFTImplFFT3D::HipFFTImplFFT3D(HipContext& context, int xsize, int ysize, int zsize, bool realToComplex, hipStream_t stream, HipArray& in, HipArray& out) :
+        HipFFTBase(context, xsize, ysize, zsize, realToComplex, stream, in, out), xsize(xsize), ysize(ysize), zsize(zsize) {
     packRealAsComplex = false;
     int packedXSize = xsize;
     int packedYSize = ysize;
@@ -94,12 +94,14 @@ HipFFT3D::HipFFT3D(HipContext& context, int xsize, int ysize, int zsize, bool re
     invykernel = createKernel(packedZSize, packedXSize, packedYSize, ythreads, 2, false, inputIsReal);
 }
 
-void HipFFT3D::execFFT(HipArray& in, HipArray& out, bool forward) {
+void HipFFTImplFFT3D::execFFT(bool forward) {
     hipFunction_t kernel1 = (forward ? zkernel : invzkernel);
     hipFunction_t kernel2 = (forward ? xkernel : invxkernel);
     hipFunction_t kernel3 = (forward ? ykernel : invykernel);
-    void* args1[] = {&in.getDevicePointer(), &out.getDevicePointer()};
-    void* args2[] = {&out.getDevicePointer(), &in.getDevicePointer()};
+    void* pin = forward ? &in.getDevicePointer() : &out.getDevicePointer();
+    void* pout = forward ? &out.getDevicePointer() : &in.getDevicePointer();
+    void* args1[] = {pin, pout};
+    void* args2[] = {pout, pin};
     if (packRealAsComplex) {
         hipFunction_t packKernel = (forward ? packForwardKernel : packBackwardKernel);
         hipFunction_t unpackKernel = (forward ? unpackForwardKernel : unpackBackwardKernel);
@@ -126,7 +128,10 @@ void HipFFT3D::execFFT(HipArray& in, HipArray& out, bool forward) {
     }
 }
 
-int HipFFT3D::findLegalDimension(int minimum) {
+HipFFTImplFFT3D::~HipFFTImplFFT3D() {
+}
+
+int HipFFTImplFFT3D::findLegalDimension(int minimum) {
     if (minimum < 1)
         return 1;
     while (true) {
@@ -170,7 +175,7 @@ static int getSmallestRadix(int size) {
     return minRadix;
 }
 
-hipFunction_t HipFFT3D::createKernel(int xsize, int ysize, int zsize, int& threads, int axis, bool forward, bool inputIsReal) {
+hipFunction_t HipFFTImplFFT3D::createKernel(int xsize, int ysize, int zsize, int& threads, int axis, bool forward, bool inputIsReal) {
     int maxThreads = (context.getUseDoublePrecision() ? 128 : 256);
 //    while (maxThreads > 128 && maxThreads-64 >= zsize)
 //        maxThreads -= 64;
