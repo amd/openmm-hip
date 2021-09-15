@@ -98,10 +98,8 @@ void HipFFTImplFFT3D::execFFT(bool forward) {
     hipFunction_t kernel1 = (forward ? zkernel : invzkernel);
     hipFunction_t kernel2 = (forward ? xkernel : invxkernel);
     hipFunction_t kernel3 = (forward ? ykernel : invykernel);
-    void* pin = forward ? &in.getDevicePointer() : &out.getDevicePointer();
-    void* pout = forward ? &out.getDevicePointer() : &in.getDevicePointer();
-    void* args1[] = {pin, pout};
-    void* args2[] = {pout, pin};
+    void* args1[] = {forward ? &pin : &pout, forward ? &pout : &pin};
+    void* args2[] = {forward ? &pout : &pin, forward ? &pin : &pout};
     if (packRealAsComplex) {
         hipFunction_t packKernel = (forward ? packForwardKernel : packBackwardKernel);
         hipFunction_t unpackKernel = (forward ? unpackForwardKernel : unpackBackwardKernel);

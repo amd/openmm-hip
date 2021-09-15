@@ -34,33 +34,61 @@ using namespace OpenMM;
 using namespace std;
 
 HipFFTImplHipFFT::HipFFTImplHipFFT(HipContext& context, int xsize, int ysize, int zsize, bool realToComplex, hipStream_t stream, HipArray& in, HipArray& out) :
-        HipFFTBase(context, xsize, ysize, zsize, realToComplex, stream, in, out) {
+        HipFFTBase(context, xsize, ysize, zsize, realToComplex, stream, in, out), realToComplex(realToComplex) {
 
     hipfftResult result;
-    result = hipfftPlan3d(&fftForward, xsize, ysize, zsize, context.getUseDoublePrecision() ? HIPFFT_D2Z : HIPFFT_R2C);
-    if (result != HIPFFT_SUCCESS)
-        throw OpenMMException("Error initializing FFT: "+context.intToString(result));
-    result = hipfftPlan3d(&fftBackward, xsize, ysize, zsize, context.getUseDoublePrecision() ? HIPFFT_Z2D : HIPFFT_C2R);
-    if (result != HIPFFT_SUCCESS)
-        throw OpenMMException("Error initializing FFT: "+context.intToString(result));
+    if (realToComplex) {
+        result = hipfftPlan3d(&fftForward, xsize, ysize, zsize, context.getUseDoublePrecision() ? HIPFFT_D2Z : HIPFFT_R2C);
+        if (result != HIPFFT_SUCCESS)
+            throw OpenMMException("Error initializing FFT: "+context.intToString(result));
+        result = hipfftPlan3d(&fftBackward, xsize, ysize, zsize, context.getUseDoublePrecision() ? HIPFFT_Z2D : HIPFFT_C2R);
+        if (result != HIPFFT_SUCCESS)
+            throw OpenMMException("Error initializing FFT: "+context.intToString(result));
+    }
+    else {
+        result = hipfftPlan3d(&fftForward, xsize, ysize, zsize, context.getUseDoublePrecision() ? HIPFFT_Z2Z : HIPFFT_C2C);
+        if (result != HIPFFT_SUCCESS)
+            throw OpenMMException("Error initializing FFT: "+context.intToString(result));
+        result = hipfftPlan3d(&fftBackward, xsize, ysize, zsize, context.getUseDoublePrecision() ? HIPFFT_Z2Z : HIPFFT_C2C);
+        if (result != HIPFFT_SUCCESS)
+            throw OpenMMException("Error initializing FFT: "+context.intToString(result));
+    }
     hipfftSetStream(fftForward, stream);
     hipfftSetStream(fftBackward, stream);
 }
 
 void HipFFTImplHipFFT::execFFT(bool forward) {
     hipfftResult result = HIPFFT_SUCCESS;
-    if (forward) {
-        if (context.getUseDoublePrecision()) {
-            result = hipfftExecD2Z(fftForward, (double*) in.getDevicePointer(), (double2*) out.getDevicePointer());
-        } else {
-            result = hipfftExecR2C(fftForward, (float*) in.getDevicePointer(), (float2*) out.getDevicePointer());
+    if (realToComplex) {
+        if (forward) {
+            if (context.getUseDoublePrecision()) {
+                result = hipfftExecD2Z(fftForward, (double*) pin, (double2*) pout);
+            } else {
+                result = hipfftExecR2C(fftForward, (float*) pin, (float2*) pout);
+            }
+        }
+        else {
+            if (context.getUseDoublePrecision()) {
+                result = hipfftExecZ2D(fftBackward, (double2*) pout, (double*) pin);
+            } else {
+                result = hipfftExecC2R(fftBackward, (float2*) pout, (float*) pin);
+            }
         }
     }
     else {
-        if (context.getUseDoublePrecision()) {
-            result = hipfftExecZ2D(fftBackward, (double2*) out.getDevicePointer(), (double*) in.getDevicePointer());
-        } else {
-            result = hipfftExecC2R(fftBackward, (float2*) out.getDevicePointer(), (float*) in.getDevicePointer());
+        if (forward) {
+            if (context.getUseDoublePrecision()) {
+                result = hipfftExecZ2Z(fftForward, (double2*) pin, (double2*) pout, HIPFFT_FORWARD);
+            } else {
+                result = hipfftExecC2C(fftForward, (float2*) pin, (float2*) pout, HIPFFT_FORWARD);
+            }
+        }
+        else {
+            if (context.getUseDoublePrecision()) {
+                result = hipfftExecZ2Z(fftBackward, (double2*) pout, (double2*) pin, HIPFFT_BACKWARD);
+            } else {
+                result = hipfftExecC2C(fftBackward, (float2*) pout, (float2*) pin, HIPFFT_BACKWARD);
+            }
         }
     }
     if (result != HIPFFT_SUCCESS)

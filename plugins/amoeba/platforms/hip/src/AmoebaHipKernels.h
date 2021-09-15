@@ -33,8 +33,8 @@
 #include "HipContext.h"
 #include "HipNonbondedUtilities.h"
 #include "HipSort.h"
+#include "HipFFTBase.h"
 #include "AmoebaCommonKernels.h"
-#include <hipfft.h>
 
 namespace OpenMM {
 
@@ -44,7 +44,7 @@ namespace OpenMM {
 class HipCalcAmoebaMultipoleForceKernel : public CommonCalcAmoebaMultipoleForceKernel {
 public:
     HipCalcAmoebaMultipoleForceKernel(const std::string& name, const Platform& platform, HipContext& cu, const System& system) :
-            CommonCalcAmoebaMultipoleForceKernel(name, platform, cu, system), hasInitializedFFT(false) {
+            CommonCalcAmoebaMultipoleForceKernel(name, platform, cu, system), cu(cu), fft(NULL) {
     }
     ~HipCalcAmoebaMultipoleForceKernel();
     /**
@@ -65,8 +65,8 @@ public:
         return cc.getUseDoublePrecision();
     }
 private:
-    bool hasInitializedFFT;
-    hipfftHandle fft;
+    HipContext& cu;
+    HipFFTBase* fft;
 };
 
 /**
@@ -75,7 +75,7 @@ private:
 class HipCalcHippoNonbondedForceKernel : public CommonCalcHippoNonbondedForceKernel {
 public:
     HipCalcHippoNonbondedForceKernel(const std::string& name, const Platform& platform, HipContext& cu, const System& system) :
-            CommonCalcHippoNonbondedForceKernel(name, platform, cu, system), cu(cu), sort(NULL), hasInitializedFFT(false) {
+            CommonCalcHippoNonbondedForceKernel(name, platform, cu, system), cu(cu), sort(NULL), fft(NULL), dfft(NULL) {
     }
     ~HipCalcHippoNonbondedForceKernel();
     /**
@@ -111,9 +111,9 @@ private:
         const char* getSortKey() const {return "value.y";}
     };
     HipContext& cu;
-    bool hasInitializedFFT;
     HipSort* sort;
-    hipfftHandle fftForward, fftBackward, dfftForward, dfftBackward;
+    HipFFTBase* fft;
+    HipFFTBase* dfft;
 };
 
 } // namespace OpenMM

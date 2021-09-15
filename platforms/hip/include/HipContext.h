@@ -57,6 +57,7 @@
 #include "HipIntegrationUtilities.h"
 #include "HipNonbondedUtilities.h"
 #include "HipPlatform.h"
+#include "HipFFTBase.h"
 #include "openmm/OpenMMException.h"
 #include "openmm/common/ComputeContext.h"
 #include "openmm/Kernel.h"
@@ -161,6 +162,22 @@ public:
      * Construct a ComputeEvent object of the appropriate class for this platform.
      */
     ComputeEvent createEvent();
+    /**
+     * Create a new HipFFT depending on the current FFT backend.
+     *
+     * @param xsize   the first dimension of the data sets on which FFTs will be performed
+     * @param ysize   the second dimension of the data sets on which FFTs will be performed
+     * @param zsize   the third dimension of the data sets on which FFTs will be performed
+     * @param realToComplex  if true, a real-to-complex transform will be done.  Otherwise, it is complex-to-complex.
+     * @param stream  HIP stream
+     * @param in      the data to transform, ordered such that in[x*ysize*zsize + y*zsize + z] contains element (x, y, z)
+     * @param out     on exit, this contains the transformed data
+     */
+    HipFFTBase* createFFT(int xsize, int ysize, int zsize, bool realToComplex, hipStream_t stream, HipArray& in, HipArray& out);
+    /**
+     * Get the smallest legal size for a dimension of the grid supported by the current FFT backend.
+     */
+    virtual int findLegalFFTDimension(int minimum);
     /**
      * Compile source code to create a ComputeProgram.
      *
@@ -567,6 +584,7 @@ private:
     int sharedMemPerBlock;
     bool useBlockingSync, useDoublePrecision, useMixedPrecision, contextIsValid, boxIsTriclinic, hasCompilerKernel, isHipccAvailable, hasAssignedPosqCharges;
     bool isLinkedContext;
+    int fftBackend;
     std::string compiler, tempDir, cacheDir, gpuArchitecture;
     float4 periodicBoxVecXFloat, periodicBoxVecYFloat, periodicBoxVecZFloat, periodicBoxSizeFloat, invPeriodicBoxSizeFloat;
     double4 periodicBoxVecX, periodicBoxVecY, periodicBoxVecZ, periodicBoxSize, invPeriodicBoxSize;

@@ -64,7 +64,7 @@ public:
      * @param out     on exit, this contains the transformed data
      */
     HipFFTBase(HipContext& context, int xsize, int ysize, int zsize, bool realToComplex, hipStream_t stream, HipArray& in, HipArray& out)
-        : context(context), stream(stream), in(in), out(out) { };
+        : context(context), stream(stream), pin(in.getDevicePointer()), pout(out.getDevicePointer()) { };
     virtual ~HipFFTBase() = 0;
     /**
      * Perform a Fourier transform.
@@ -75,8 +75,8 @@ public:
 protected:
     hipStream_t stream;
     HipContext& context;
-    HipArray& in;
-    HipArray& out;
+    void* pin;
+    void* pout;
 };
 
 } // namespace OpenMM

@@ -37,9 +37,6 @@
 #include "HipIntegrationUtilities.h"
 #include "HipNonbondedUtilities.h"
 #include "HipKernelSources.h"
-#include "HipFFTImplFFT3D.h"
-#include "HipFFTImplHipFFT.h"
-#include "HipFFTImplVkFFT.h"
 #include "SimTKOpenMMRealType.h"
 #include "SimTKOpenMMUtilities.h"
 #include <algorithm>
@@ -554,16 +551,6 @@ HipCalcNonbondedForceKernel::~HipCalcNonbondedForceKernel() {
     }
 }
 
-static int findLegalFFTDimension(int minimum, int fftBackend) {
-    if (fftBackend == 1) {
-        return HipFFTImplHipFFT::findLegalDimension(minimum);
-    }
-    else if (fftBackend == 2) {
-        return HipFFTImplVkFFT::findLegalDimension(minimum);
-    }
-    return HipFFTImplFFT3D::findLegalDimension(minimum);
-}
-
 void HipCalcNonbondedForceKernel::initialize(const System& system, const NonbondedForce& force) {
     cu.setAsCurrent();
     int forceIndex;
@@ -701,21 +688,16 @@ void HipCalcNonbondedForceKernel::initialize(const System& system, const Nonbond
     else if (((nonbondedMethod == PME || nonbondedMethod == LJPME) && hasCoulomb) || doLJPME) {
         // Compute the PME parameters.
 
-        int fftBackend = 0;
-        char* fftBackendVariable = getenv("OPENMM_FFT_BACKEND");
-        if (fftBackendVariable != NULL)
-            stringstream(fftBackendVariable) >> fftBackend;
-
         NonbondedForceImpl::calcPMEParameters(system, force, alpha, gridSizeX, gridSizeY, gridSizeZ, false);
-        gridSizeX = findLegalFFTDimension(gridSizeX, fftBackend);
-        gridSizeY = findLegalFFTDimension(gridSizeY, fftBackend);
-        gridSizeZ = findLegalFFTDimension(gridSizeZ, fftBackend);
+        gridSizeX = cu.findLegalFFTDimension(gridSizeX);
+        gridSizeY = cu.findLegalFFTDimension(gridSizeY);
+        gridSizeZ = cu.findLegalFFTDimension(gridSizeZ);
         if (doLJPME) {
             NonbondedForceImpl::calcPMEParameters(system, force, dispersionAlpha, dispersionGridSizeX,
                                                   dispersionGridSizeY, dispersionGridSizeZ, true);
-            dispersionGridSizeX = findLegalFFTDimension(dispersionGridSizeX, fftBackend);
-            dispersionGridSizeY = findLegalFFTDimension(dispersionGridSizeY, fftBackend);
-            dispersionGridSizeZ = findLegalFFTDimension(dispersionGridSizeZ, fftBackend);
+            dispersionGridSizeX = cu.findLegalFFTDimension(dispersionGridSizeX);
+            dispersionGridSizeY = cu.findLegalFFTDimension(dispersionGridSizeY);
+            dispersionGridSizeZ = cu.findLegalFFTDimension(dispersionGridSizeZ);
         }
 
         defines["EWALD_ALPHA"] = cu.doubleToString(alpha);
@@ -845,21 +827,9 @@ void HipCalcNonbondedForceKernel::initialize(const System& system, const Nonbond
                 }
 
                 hipStream_t fftStream = usePmeStream ? pmeStream : cu.getCurrentStream();
-                if (fftBackend == 1) {
-                    fft = new HipFFTImplHipFFT(cu, gridSizeX, gridSizeY, gridSizeZ, true, fftStream, pmeGrid1, pmeGrid2);
-                    if (doLJPME)
-                        dispersionFft = new HipFFTImplHipFFT(cu, dispersionGridSizeX, dispersionGridSizeY, dispersionGridSizeZ, true, fftStream, pmeGrid1, pmeGrid2);
-                }
-                else if (fftBackend == 2) {
-                    fft = new HipFFTImplVkFFT(cu, gridSizeX, gridSizeY, gridSizeZ, true, fftStream, pmeGrid1, pmeGrid2);
-                    if (doLJPME)
-                        dispersionFft = new HipFFTImplVkFFT(cu, dispersionGridSizeX, dispersionGridSizeY, dispersionGridSizeZ, true, fftStream, pmeGrid1, pmeGrid2);
-                }
-                else {
-                    fft = new HipFFTImplFFT3D(cu, gridSizeX, gridSizeY, gridSizeZ, true, fftStream, pmeGrid1, pmeGrid2);
-                    if (doLJPME)
-                        dispersionFft = new HipFFTImplFFT3D(cu, dispersionGridSizeX, dispersionGridSizeY, dispersionGridSizeZ, true, fftStream, pmeGrid1, pmeGrid2);
-                }
+                fft = cu.createFFT(gridSizeX, gridSizeY, gridSizeZ, true, fftStream, pmeGrid1, pmeGrid2);
+                if (doLJPME)
+                    dispersionFft = cu.createFFT(dispersionGridSizeX, dispersionGridSizeY, dispersionGridSizeZ, true, fftStream, pmeGrid1, pmeGrid2);
                 hasInitializedFFT = true;
 
                 // Initialize the b-spline moduli.

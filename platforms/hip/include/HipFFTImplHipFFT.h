@@ -70,6 +70,7 @@ public:
      */
     static int findLegalDimension(int minimum);
 private:
+    bool realToComplex;
     hipfftHandle fftForward;
     hipfftHandle fftBackward;
 };

@@ -35,8 +35,6 @@ HipFFTImplVkFFT::HipFFTImplVkFFT(HipContext& context, int xsize, int ysize, int 
         HipFFTBase(context, xsize, ysize, zsize, realToComplex, stream, in, out) {
 
     deviceIndex = context.getDeviceIndex();
-    inputBuffer = in.getDevicePointer();
-    outputBuffer = out.getDevicePointer();
     size_t valueSize = context.getUseDoublePrecision() ? sizeof(double) : sizeof(float);
     inputBufferSize = zsize * ysize * xsize * valueSize;
     if (realToComplex) {
@@ -62,13 +60,13 @@ HipFFTImplVkFFT::HipFFTImplVkFFT(HipContext& context, int xsize, int ysize, int 
     configuration.inverseReturnToInputBuffer = true;
     configuration.isInputFormatted = true;
     configuration.inputBufferSize = &inputBufferSize;
-    configuration.inputBuffer = &inputBuffer;
+    configuration.inputBuffer = &pin;
     configuration.inputBufferStride[0] = zsize;
     configuration.inputBufferStride[1] = configuration.inputBufferStride[0] * ysize;
     configuration.inputBufferStride[2] = configuration.inputBufferStride[1] * xsize;
 
     configuration.bufferSize = &outputBufferSize;
-    configuration.buffer = &outputBuffer;
+    configuration.buffer = &pout;
     configuration.bufferStride[0] = realToComplex ? (zsize/2 + 1) : zsize;
     configuration.bufferStride[1] = configuration.bufferStride[0] * ysize;
     configuration.bufferStride[2] = configuration.bufferStride[1] * xsize;

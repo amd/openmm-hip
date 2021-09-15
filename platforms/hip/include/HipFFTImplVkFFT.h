@@ -87,8 +87,6 @@ public:
 private:
     VkFFTApplication* app;
     int deviceIndex;
-    void* inputBuffer;
-    void* outputBuffer;
     uint64_t inputBufferSize;
     uint64_t outputBufferSize;
 };

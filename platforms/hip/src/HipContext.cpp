@@ -39,6 +39,9 @@
 #include "HipKernelSources.h"
 #include "HipNonbondedUtilities.h"
 #include "HipProgram.h"
+#include "HipFFTImplFFT3D.h"
+#include "HipFFTImplHipFFT.h"
+#include "HipFFTImplVkFFT.h"
 #include "openmm/common/ComputeArray.h"
 #include "SHA1.h"
 #include "openmm/Platform.h"
@@ -77,7 +80,8 @@ bool HipContext::hasInitializedHip = false;
 HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSync, const string& precision, const string& compiler,
         const string& tempDir, const std::string& hostCompiler, bool allowRuntimeCompiler, HipPlatform::PlatformData& platformData,
         HipContext* originalContext) : ComputeContext(system), currentStream(0), platformData(platformData), contextIsValid(false), hasAssignedPosqCharges(false),
-        hasCompilerKernel(false), isHipccAvailable(false), pinnedBuffer(NULL), integration(NULL), expression(NULL), bonded(NULL), nonbonded(NULL) {
+        hasCompilerKernel(false), isHipccAvailable(false), pinnedBuffer(NULL), integration(NULL), expression(NULL), bonded(NULL), nonbonded(NULL),
+        fftBackend(0) {
     // Determine what compiler to use.
 
     this->compiler = "\""+compiler+"\"";
@@ -348,6 +352,10 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
             "pos.y -= floor((pos.y-center.y)*invPeriodicBoxSize.y+0.5f)*periodicBoxSize.y; \\\n"
             "pos.z -= floor((pos.z-center.z)*invPeriodicBoxSize.z+0.5f)*periodicBoxSize.z;}";
     }
+
+    char* fftBackendVariable = getenv("OPENMM_FFT_BACKEND");
+    if (fftBackendVariable != NULL)
+        stringstream(fftBackendVariable) >> fftBackend;
 
     // Create utilities objects.
 
@@ -659,6 +667,28 @@ HipArray* HipContext::createArray() {
 
 ComputeEvent HipContext::createEvent() {
     return shared_ptr<ComputeEventImpl>(new HipEvent(*this));
+}
+
+HipFFTBase* HipContext::createFFT(int xsize, int ysize, int zsize, bool realToComplex, hipStream_t stream, HipArray& in, HipArray& out) {
+    if (fftBackend == 1) {
+        return new HipFFTImplHipFFT(*this, xsize, ysize, zsize, realToComplex, stream, in, out);
+    }
+    else if (fftBackend == 2) {
+        return new HipFFTImplVkFFT(*this, xsize, ysize, zsize, realToComplex, stream, in, out);
+    }
+    else {
+        return new HipFFTImplFFT3D(*this, xsize, ysize, zsize, realToComplex, stream, in, out);
+    }
+}
+
+int HipContext::findLegalFFTDimension(int minimum) {
+    if (fftBackend == 1) {
+        return HipFFTImplHipFFT::findLegalDimension(minimum);
+    }
+    else if (fftBackend == 2) {
+        return HipFFTImplVkFFT::findLegalDimension(minimum);
+    }
+    return HipFFTImplFFT3D::findLegalDimension(minimum);
 }
 
 ComputeProgram HipContext::compileProgram(const std::string source, const std::map<std::string, std::string>& defines) {
