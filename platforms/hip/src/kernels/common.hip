@@ -24,3 +24,6 @@ typedef unsigned long long mm_ulong;
 
 #define SUPPORTS_64_BIT_ATOMICS __HIP_ARCH_HAS_GLOBAL_INT64_ATOMICS__
 #define SUPPORTS_DOUBLE_PRECISION __HIP_ARCH_HAS_DOUBLES__
+
+#define LAUNCH_BOUNDS_EXACT(WORK_GROUP_SIZE, WAVES_PER_EU) \
+    __attribute__((amdgpu_flat_work_group_size(WORK_GROUP_SIZE, WORK_GROUP_SIZE), amdgpu_waves_per_eu(WAVES_PER_EU, WAVES_PER_EU)))
