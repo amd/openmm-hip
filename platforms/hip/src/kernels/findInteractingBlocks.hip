@@ -100,58 +100,6 @@ extern "C" __global__ void sortBoxData(const real2* __restrict__ sortedBlock, co
     }
 }
 
-__device__ int saveSinglePairs(int x, int* atoms, tileflags* flags, int length, unsigned int maxSinglePairs, unsigned int* singlePairCount, int2* singlePairs) {
-    // Record interactions that should be computed as single pairs rather than in blocks.
-
-    const int indexInWarp = threadIdx.x%TILE_SIZE;
-    int sum = 0;
-    for (int i = indexInWarp; i < length; i += TILE_SIZE) {
-        int count = __TILEFLAGS_POPC(flags[i]);
-        sum += (count <= MAX_BITS_FOR_PAIRS ? count : 0);
-    }
-    for (int i = 1; i < TILE_SIZE; i *= 2) {
-        int n = SHFL(sum, indexInWarp - i);
-        if (indexInWarp >= i)
-            sum += n;
-    }
-    int pairStartIndex = 0;
-    if (indexInWarp == TILE_SIZE - 1)
-        pairStartIndex = atomicAdd(singlePairCount,(unsigned int) sum);
-    pairStartIndex = SHFL(pairStartIndex, TILE_SIZE - 1);
-    int prevSum = SHFL(sum, indexInWarp - 1);
-    int pairIndex = pairStartIndex + (indexInWarp > 0 ? prevSum : 0);
-    for (int i = indexInWarp; i < length; i += TILE_SIZE) {
-        tileflags f = flags[i];
-        int count = __TILEFLAGS_POPC(f);
-        if (count <= MAX_BITS_FOR_PAIRS && pairIndex+count <= maxSinglePairs) {
-            while (f != 0) {
-                singlePairs[pairIndex] = make_int2(atoms[i], x*TILE_SIZE+__TILEFLAGS_FFS(f)-1);
-                f &= f-1;
-                pairIndex++;
-            }
-        }
-    }
-
-    // Compact the remaining interactions.
-
-    const tileflags warpMask = (static_cast<tileflags>(1)<<indexInWarp)-1;
-    int numCompacted = 0;
-    for (int start = 0; start < length; start += TILE_SIZE) {
-        int i = start+indexInWarp;
-        int atom = atoms[i];
-        tileflags flag = flags[i];
-        bool include = (i < length && __TILEFLAGS_POPC(flag) > MAX_BITS_FOR_PAIRS);
-        tileflags includeFlags = BALLOT(include);
-        if (include) {
-            int index = numCompacted+__TILEFLAGS_POPC(includeFlags&warpMask);
-            atoms[index] = atom;
-            flags[index] = flag;
-        }
-        numCompacted += __TILEFLAGS_POPC(includeFlags);
-    }
-    return numCompacted;
-}
-
 /**
  * Compare the bounding boxes for each pair of atom blocks (comprised of TILE_SIZE atoms each), forming a tile. If the two
  * atom blocks are sufficiently far apart, mark them as non-interacting. There are two stages in the algorithm.
@@ -216,11 +164,9 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
     const int warpIndex = (blockIdx.x*blockDim.x+threadIdx.x)/TILE_SIZE;
     const tileflags warpMask = (static_cast<tileflags>(1)<<indexInWarp)-1;
     __shared__ int workgroupBuffer[BUFFER_SIZE*(GROUP_SIZE/TILE_SIZE)];
-    __shared__ tileflags workgroupFlagsBuffer[BUFFER_SIZE*(GROUP_SIZE/TILE_SIZE)];
     __shared__ int warpExclusions[MAX_EXCLUSIONS*(GROUP_SIZE/TILE_SIZE)];
     __shared__ real4 posBuffer[GROUP_SIZE];
     int* buffer = workgroupBuffer+BUFFER_SIZE*(warpStart/TILE_SIZE);
-    tileflags* flagsBuffer = workgroupFlagsBuffer+BUFFER_SIZE*(warpStart/TILE_SIZE);
     int* exclusionsForX = warpExclusions+MAX_EXCLUSIONS*(warpStart/TILE_SIZE);
 
     // Loop over blocks.
@@ -303,7 +249,7 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
             while (includeBlockFlags != 0) {
                 int i = __TILEFLAGS_FFS(includeBlockFlags)-1;
                 includeBlockFlags &= includeBlockFlags-1;
-                forceInclude = (forceIncludeFlags>>i) & 1;
+                forceInclude = (unsigned int)(forceIncludeFlags>>i) & 1;
                 int y = (int) sortedBlocks[block2Base+i*NUM_TILES_IN_BATCH].y;
 
                 // Check each atom in block Y for interactions.
@@ -359,47 +305,66 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
     #endif
                 }
 
+                const int interactCount = __TILEFLAGS_POPC(interacts);
+
+                // Record interactions that should be computed as single pairs rather than in blocks.
+    #if MAX_BITS_FOR_PAIRS > 0
+                const bool storeAsSinglePair = interactCount > 0 && interactCount <= MAX_BITS_FOR_PAIRS;
+                if (BALLOT(storeAsSinglePair)) {
+                    int sum = (storeAsSinglePair ? interactCount : 0);
+                    for (int i = 1; i < TILE_SIZE; i *= 2) {
+                        int n = SHFL(sum, indexInWarp - i);
+                        if (indexInWarp >= i)
+                            sum += n;
+                    }
+                    int pairStartIndex = 0;
+                    if (indexInWarp == TILE_SIZE - 1)
+                        pairStartIndex = atomicAdd(&interactionCount[1], (unsigned int)sum);
+                    pairStartIndex = SHFL(pairStartIndex, TILE_SIZE - 1);
+                    int prevSum = SHFL(sum, indexInWarp - 1);
+                    int pairIndex = pairStartIndex + (indexInWarp > 0 ? prevSum : 0);
+                    if (storeAsSinglePair && pairIndex+interactCount <= maxSinglePairs) {
+                        while (interacts != 0) {
+                            int j = __TILEFLAGS_FFS(interacts)-1;
+                            singlePairs[pairIndex] = make_int2(atom2, x*TILE_SIZE+j);
+                            interacts = interacts ^ (static_cast<tileflags>(1) << j);
+                            pairIndex++;
+                        }
+                    }
+                }
+    #endif
+
                 // Add any interacting atoms to the buffer.
 
-                tileflags includeAtomFlags = BALLOT(interacts);
-                if (interacts) {
+                tileflags includeAtomFlags = BALLOT(interactCount > MAX_BITS_FOR_PAIRS);
+                if (interactCount > MAX_BITS_FOR_PAIRS) {
                     int index = neighborsInBuffer+__TILEFLAGS_POPC(includeAtomFlags&warpMask);
                     buffer[index] = atom2;
-                    flagsBuffer[index] = interacts;
                 }
                 neighborsInBuffer += __TILEFLAGS_POPC(includeAtomFlags);
                 if (neighborsInBuffer > BUFFER_SIZE-TILE_SIZE) {
                     // Store the new tiles to memory.
 
-    #if MAX_BITS_FOR_PAIRS > 0
-                    neighborsInBuffer = saveSinglePairs(x, buffer, flagsBuffer, neighborsInBuffer, maxSinglePairs, &interactionCount[1], singlePairs);
-    #endif
                     int tilesToStore = neighborsInBuffer/TILE_SIZE;
-                    if (tilesToStore > 0) {
-                        int tileStartIndex = 0;
-                        if (indexInWarp == 0)
-                            tileStartIndex = atomicAdd(&interactionCount[0], tilesToStore);
-                        int newTileStartIndex = SHFL(tileStartIndex, 0);
-                        if (newTileStartIndex+tilesToStore <= maxTiles) {
-                            if (indexInWarp < tilesToStore)
-                                interactingTiles[newTileStartIndex+indexInWarp] = x;
-                            for (int j = 0; j < tilesToStore; j++)
-                                interactingAtoms[(newTileStartIndex+j)*TILE_SIZE+indexInWarp] = buffer[indexInWarp+j*TILE_SIZE];
-                        }
-                        if (indexInWarp+TILE_SIZE*tilesToStore < BUFFER_SIZE)
-                            buffer[indexInWarp] = buffer[indexInWarp+TILE_SIZE*tilesToStore];
-                        neighborsInBuffer -= TILE_SIZE*tilesToStore;
+                    int tileStartIndex = 0;
+                    if (indexInWarp == 0)
+                        tileStartIndex = atomicAdd(&interactionCount[0], tilesToStore);
+                    int newTileStartIndex = SHFL(tileStartIndex, 0);
+                    if (newTileStartIndex+tilesToStore <= maxTiles) {
+                        if (indexInWarp < tilesToStore)
+                            interactingTiles[newTileStartIndex+indexInWarp] = x;
+                        for (int j = 0; j < tilesToStore; j++)
+                            interactingAtoms[newTileStartIndex*TILE_SIZE+j*TILE_SIZE+indexInWarp] = buffer[j*TILE_SIZE+indexInWarp];
                     }
+                    if (indexInWarp+TILE_SIZE*tilesToStore < BUFFER_SIZE)
+                        buffer[indexInWarp] = buffer[indexInWarp+TILE_SIZE*tilesToStore];
+                    neighborsInBuffer -= TILE_SIZE*tilesToStore;
                 }
             }
         }
 
         // If we have a partially filled buffer,  store it to memory.
 
-    #if MAX_BITS_FOR_PAIRS > 0
-        if (neighborsInBuffer > TILE_SIZE)
-            neighborsInBuffer = saveSinglePairs(x, buffer, flagsBuffer, neighborsInBuffer, maxSinglePairs, &interactionCount[1], singlePairs);
-    #endif
         if (neighborsInBuffer > 0) {
             int tilesToStore = (neighborsInBuffer+TILE_SIZE-1)/TILE_SIZE;
             int tileStartIndex = 0;
@@ -410,7 +375,7 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
                 if (indexInWarp < tilesToStore)
                     interactingTiles[newTileStartIndex+indexInWarp] = x;
                 for (int j = 0; j < tilesToStore; j++)
-                    interactingAtoms[(newTileStartIndex+j)*TILE_SIZE+indexInWarp] = (indexInWarp+j*TILE_SIZE < neighborsInBuffer ? buffer[indexInWarp+j*TILE_SIZE] : PADDED_NUM_ATOMS);
+                    interactingAtoms[newTileStartIndex*TILE_SIZE+j*TILE_SIZE+indexInWarp] = (j*TILE_SIZE+indexInWarp < neighborsInBuffer ? buffer[j*TILE_SIZE+indexInWarp] : PADDED_NUM_ATOMS);
             }
         }
     }
