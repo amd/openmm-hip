@@ -326,9 +326,9 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
                 if (atom2 < NUM_ATOMS && atomFlags != 0) {
     #ifdef USE_PERIODIC
                     if (!singlePeriodicCopy) {
-                        int first = __TILEFLAGS_FFS(atomFlags)-1;
-                        int last = TILE_SIZE-__TILEFLAGS_CLZ(atomFlags);
-                        for (int j = first; j < last; j++) {
+                        while (atomFlags) {
+                            int j = __TILEFLAGS_FFS(atomFlags)-1;
+                            atomFlags = atomFlags ^ (static_cast<tileflags>(1) << j);
                             real3 delta = trimTo3(pos2)-trimTo3(posBuffer[warpStart+j]);
                             APPLY_PERIODIC_TO_DELTA(delta)
                             interacts |= (delta.x*delta.x+delta.y*delta.y+delta.z*delta.z < PADDED_CUTOFF_SQUARED ? static_cast<tileflags>(1)<<j : 0);
@@ -337,11 +337,22 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
                     else {
     #endif
                         const real lim = 0.5f * PADDED_CUTOFF_SQUARED - pos2.w;
-                        #pragma unroll
-                        for (int j = 0; j < TILE_SIZE; j++) {
-                            real4 posj = posBuffer[warpStart+j];
-                            real halfDist2 = posj.w - posj.x*pos2.x - posj.y*pos2.y - posj.z*pos2.z;
-                            interacts |= (halfDist2 < lim ? static_cast<tileflags>(1)<<j : 0);
+                        if (__TILEFLAGS_POPC(atomFlags) < TILE_SIZE/2 && TILE_SIZE == warpSize) {
+                            while (atomFlags) {
+                                int j = __TILEFLAGS_FFS(atomFlags)-1;
+                                atomFlags = atomFlags ^ (static_cast<tileflags>(1) << j);
+                                real4 posj = posBuffer[warpStart+j];
+                                real halfDist2 = posj.w - posj.x*pos2.x - posj.y*pos2.y - posj.z*pos2.z;
+                                interacts |= (halfDist2 < lim ? static_cast<tileflags>(1)<<j : 0);
+                            }
+                        }
+                        else {
+                            #pragma unroll
+                            for (int j = 0; j < TILE_SIZE; j++) {
+                                real4 posj = posBuffer[warpStart+j];
+                                real halfDist2 = posj.w - posj.x*pos2.x - posj.y*pos2.y - posj.z*pos2.z;
+                                interacts |= (halfDist2 < lim ? static_cast<tileflags>(1)<<j : 0);
+                            }
                         }
     #ifdef USE_PERIODIC
                     }
