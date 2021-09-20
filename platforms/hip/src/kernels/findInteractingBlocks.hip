@@ -30,18 +30,21 @@ __device__ inline int __TILEFLAGS_POPC(unsigned long long int x) {
 extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, real4 invPeriodicBoxSize, real4 periodicBoxVecX, real4 periodicBoxVecY, real4 periodicBoxVecZ,
         const real4* __restrict__ posq, real4* __restrict__ blockCenter, real4* __restrict__ blockBoundingBox, int* __restrict__ rebuildNeighborList,
         real2* __restrict__ sortedBlocks) {
-    int index = blockIdx.x*blockDim.x+threadIdx.x;
-    int base = index*TILE_SIZE;
-    while (base < numAtoms) {
-        real4 pos = posq[base];
+    __shared__ real4 sPos[TILE_SIZE];
+    int index = blockIdx.x;
+    int base = index * TILE_SIZE;
+
+    sPos[threadIdx.x] = ((base + threadIdx.x) < numAtoms) ? posq[base + threadIdx.x] : make_real4(0, 0, 0, 0);
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        real4 pos = sPos[0];
 #ifdef USE_PERIODIC
         APPLY_PERIODIC_TO_POS(pos)
 #endif
         real4 minPos = pos;
         real4 maxPos = pos;
-        int last = min(base+TILE_SIZE, numAtoms);
-        for (int i = base+1; i < last; i++) {
-            pos = posq[i];
+        for (int i = 1; i < TILE_SIZE; i++) {
+            pos = sPos[i];
 #ifdef USE_PERIODIC
             real4 center = 0.5f*(maxPos+minPos);
             APPLY_PERIODIC_TO_POS_WITH_CENTER(pos, center)
@@ -52,23 +55,22 @@ extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, 
         real4 blockSize = 0.5f*(maxPos-minPos);
         real4 center = 0.5f*(maxPos+minPos);
         center.w = 0;
-        for (int i = base; i < last; i++) {
-            real4 delta = posq[i]-center;
+        for (int i = 0; i < TILE_SIZE; i++) {
+            real4 delta = sPos[i]-center;
 #ifdef USE_PERIODIC
             APPLY_PERIODIC_TO_DELTA(delta)
 #endif
             center.w = max(center.w, delta.x*delta.x+delta.y*delta.y+delta.z*delta.z);
         }
-        center.w = sqrt(center.w);
+        center.w = SQRT(center.w);
         blockBoundingBox[index] = blockSize;
         blockCenter[index] = center;
         sortedBlocks[index] = make_real2(blockSize.x+blockSize.y+blockSize.z, index);
-        index += blockDim.x*gridDim.x;
-        base = index*TILE_SIZE;
     }
     if (blockIdx.x == 0 && threadIdx.x == 0)
         rebuildNeighborList[0] = 0;
 }
+
 
 /**
  * Sort the data about bounding boxes so it can be accessed more efficiently in the next kernel.
