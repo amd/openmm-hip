@@ -174,6 +174,12 @@ public:
         return forceThreadBlockSize;
     }
     /**
+     * Get the size of each work group used for computing nonbonded forces.
+     */
+    int getForceThreadBlockSizeGbsa() {
+        return forceThreadBlockSizeGbsa;
+    }
+    /**
      * Get the maximum cutoff distance used by any force group.
      */
     double getMaxCutoffDistance();
@@ -352,7 +358,7 @@ private:
     std::map<int, std::string> groupKernelSource;
     double lastCutoff;
     bool useCutoff, usePeriodic, anyExclusions, usePadding, forceRebuildNeighborList, canUsePairList;
-    int startTileIndex, startBlockIndex, numBlocks, maxTiles, maxSinglePairs, numTilesInBatch, maxExclusions, numForceThreadBlocks, forceThreadBlockSize, numAtoms, groupFlags;
+    int startTileIndex, startBlockIndex, numBlocks, maxTiles, maxSinglePairs, numTilesInBatch, maxExclusions, numForceThreadBlocks, forceThreadBlockSize, forceThreadBlockSizeGbsa, numAtoms, groupFlags;
     long long numTiles;
     std::string kernelSource;
 };
