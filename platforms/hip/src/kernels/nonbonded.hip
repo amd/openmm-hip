@@ -243,8 +243,8 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
     int end = (int) (startTileIndex+(warp+1)*numTileIndices/totalWarps);
     int skipBase = 0;
     int currentSkipIndex = tbx;
-    __shared__ volatile int skipTiles[THREAD_BLOCK_SIZE];
-    skipTiles[threadIdx.x] = -1;
+    int skipTiles;
+    skipTiles = -1;
     for (; pos < end; pos++) {
 #endif
         const bool hasExclusions = false;
@@ -270,19 +270,19 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
 
         // Skip over tiles that have exclusions, since they were already processed.
 
-        while (skipTiles[tbx+TILE_SIZE-1] < pos) {
+        while (SHFL(skipTiles, TILE_SIZE-1) < pos) {
             if (skipBase+tgx < NUM_TILES_WITH_EXCLUSIONS) {
                 int2 tile = exclusionTiles[skipBase+tgx];
-                skipTiles[threadIdx.x] = tile.x + tile.y*NUM_BLOCKS - tile.y*(tile.y+1)/2;
+                skipTiles = tile.x + tile.y*NUM_BLOCKS - tile.y*(tile.y+1)/2;
             }
             else
-                skipTiles[threadIdx.x] = end;
+                skipTiles = end;
             skipBase += TILE_SIZE;
-            currentSkipIndex = tbx;
+            currentSkipIndex = 0;
         }
-        while (skipTiles[currentSkipIndex] < pos)
+        while (SHFL(skipTiles, currentSkipIndex) < pos)
             currentSkipIndex++;
-        includeTile = (skipTiles[currentSkipIndex] != pos);
+        includeTile = (SHFL(skipTiles, currentSkipIndex) != pos);
 #endif
         if (includeTile) {
             unsigned int atom1 = x*TILE_SIZE + tgx;

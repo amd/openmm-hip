@@ -74,9 +74,8 @@ HipNonbondedUtilities::HipNonbondedUtilities(HipContext& context) : context(cont
     CHECK_RESULT(hipDeviceGetAttribute(&multiprocessors, hipDeviceAttributeMultiprocessorCount, context.getDevice()));
     CHECK_RESULT(hipEventCreateWithFlags(&downloadCountEvent, 0));
     CHECK_RESULT(hipHostMalloc((void**) &pinnedCountBuffer, 2*sizeof(int), hipHostMallocPortable));
-    numForceThreadBlocks = 5*multiprocessors;
-    forceThreadBlockSize = 256;
-    forceThreadBlockSizeGbsa = context.getTileSize();
+    numForceThreadBlocks = (256/context.getTileSize())*5*multiprocessors;
+    forceThreadBlockSize = context.getTileSize();
     setKernelSource(HipKernelSources::nonbonded);
 }
 
