@@ -30,39 +30,76 @@ __device__ inline int __TILEFLAGS_POPC(unsigned long long int x) {
 extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, real4 invPeriodicBoxSize, real4 periodicBoxVecX, real4 periodicBoxVecY, real4 periodicBoxVecZ,
         const real4* __restrict__ posq, real4* __restrict__ blockCenter, real4* __restrict__ blockBoundingBox, int* __restrict__ rebuildNeighborList,
         real2* __restrict__ sortedBlocks) {
-    __shared__ real4 sPos[TILE_SIZE];
     int index = blockIdx.x;
     int base = index * TILE_SIZE;
 
-    sPos[threadIdx.x] = ((base + threadIdx.x) < numAtoms) ? posq[base + threadIdx.x] : make_real4(0, 0, 0, 0);
-    __syncthreads();
-    if (threadIdx.x == 0) {
-        real4 pos = sPos[0];
+    real4 tPos = ((base + threadIdx.x) < numAtoms) ? posq[base + threadIdx.x] : make_real4(0, 0, 0, 0);
+    real4 pos;
+    pos.x = SHFL(tPos.x, 0);
+    pos.y = SHFL(tPos.y, 0);
+    pos.z = SHFL(tPos.z, 0);
 #ifdef USE_PERIODIC
-        APPLY_PERIODIC_TO_POS(pos)
+    APPLY_PERIODIC_TO_POS(pos)
 #endif
-        real4 minPos = pos;
-        real4 maxPos = pos;
-        for (int i = 1; i < TILE_SIZE; i++) {
-            pos = sPos[i];
+
 #ifdef USE_PERIODIC
-            real4 center = 0.5f*(maxPos+minPos);
-            APPLY_PERIODIC_TO_POS_WITH_CENTER(pos, center)
-#endif
-            minPos = make_real4(min(minPos.x,pos.x), min(minPos.y,pos.y), min(minPos.z,pos.z), 0);
-            maxPos = make_real4(max(maxPos.x,pos.x), max(maxPos.y,pos.y), max(maxPos.z,pos.z), 0);
-        }
-        real4 blockSize = 0.5f*(maxPos-minPos);
+    real4 minPos = pos;
+    real4 maxPos = pos;
+
+    for (int i = 1; i < TILE_SIZE; i++) {
+        pos.x = SHFL(tPos.x, i);
+        pos.y = SHFL(tPos.y, i);
+        pos.z = SHFL(tPos.z, i);
         real4 center = 0.5f*(maxPos+minPos);
-        center.w = 0;
-        for (int i = 0; i < TILE_SIZE; i++) {
-            real4 delta = sPos[i]-center;
-#ifdef USE_PERIODIC
-            APPLY_PERIODIC_TO_DELTA(delta)
+        APPLY_PERIODIC_TO_POS_WITH_CENTER(pos, center)
+        minPos = make_real4(min(minPos.x,pos.x), min(minPos.y,pos.y), min(minPos.z,pos.z), 0);
+        maxPos = make_real4(max(maxPos.x,pos.x), max(maxPos.y,pos.y), max(maxPos.z,pos.z), 0);
+    }
+#else
+    real4 minPos = tPos;
+    real4 maxPos = tPos;
+
+    for (int i = TILE_SIZE >> 1; i > 0; i >>= 1) {
+        real4 tpos1, tpos2;
+        tpos1.x = __shfl_down(minPos.x, i, TILE_SIZE);
+        tpos1.y = __shfl_down(minPos.y, i, TILE_SIZE);
+        tpos1.z = __shfl_down(minPos.z, i, TILE_SIZE);
+        tpos2.x = __shfl_down(maxPos.x, i, TILE_SIZE);
+        tpos2.y = __shfl_down(maxPos.y, i, TILE_SIZE);
+        tpos2.z = __shfl_down(maxPos.z, i, TILE_SIZE);
+
+        minPos.x = min(minPos.x, tpos1.x);
+        minPos.y = min(minPos.y, tpos1.y);
+        minPos.z = min(minPos.z, tpos1.z);
+        maxPos.x = max(maxPos.x, tpos2.x);
+        maxPos.y = max(maxPos.y, tpos2.y);
+        maxPos.z = max(maxPos.z, tpos2.z);
+    }
 #endif
-            center.w = max(center.w, delta.x*delta.x+delta.y*delta.y+delta.z*delta.z);
-        }
-        center.w = SQRT(center.w);
+
+    minPos.x = SHFL(minPos.x, 0);
+    minPos.y = SHFL(minPos.y, 0);
+    minPos.z = SHFL(minPos.z, 0);
+    maxPos.x = SHFL(maxPos.x, 0);
+    maxPos.y = SHFL(maxPos.y, 0);
+    maxPos.z = SHFL(maxPos.z, 0);
+
+    real4 blockSize = 0.5f*(maxPos-minPos);
+    real4 center = 0.5f*(maxPos+minPos);
+    center.w = 0;
+    real4 delta = tPos - center;
+#ifdef USE_PERIODIC
+    APPLY_PERIODIC_TO_DELTA(delta)
+#endif
+    real tdelta = delta.x*delta.x+delta.y*delta.y+delta.z*delta.z;
+    real tcenter = max(center.w, tdelta);
+    for (int i = TILE_SIZE >> 1; i > 0; i >>= 1) {
+        real t = __shfl_down(tcenter, i, TILE_SIZE);
+        tcenter = max(tcenter, t);
+    }
+
+    if (threadIdx.x == 0) {
+        center.w = SQRT(tcenter);
         blockBoundingBox[index] = blockSize;
         blockCenter[index] = center;
         sortedBlocks[index] = make_real2(blockSize.x+blockSize.y+blockSize.z, index);
