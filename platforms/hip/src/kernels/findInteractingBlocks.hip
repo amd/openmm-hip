@@ -139,6 +139,16 @@ extern "C" __global__ void sortBoxData(const real2* __restrict__ sortedBlock, co
     }
 }
 
+__device__ inline
+unsigned int extractSignBit(float d) {
+    return __float_as_uint(d) >> 31;
+}
+
+__device__ inline
+unsigned int extractSignBit(double d) {
+    return ((unsigned int)__double2hiint(d)) >> 31;
+}
+
 /**
  * Compare the bounding boxes for each pair of atom blocks (comprised of TILE_SIZE atoms each), forming a tile. If the two
  * atom blocks are sufficiently far apart, mark them as non-interacting. There are two stages in the algorithm.
@@ -308,7 +318,11 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
     #endif
                 tileflags atomFlags = BALLOT(forceInclude || atomDelta.x*atomDelta.x+atomDelta.y*atomDelta.y+atomDelta.z*atomDelta.z < (PADDED_CUTOFF+blockCenterY.w)*(PADDED_CUTOFF+blockCenterY.w));
                 tileflags interacts = 0;
-                if (atom2 < NUM_ATOMS && atomFlags != 0) {
+                if (atomFlags != 0) {
+                    // The condition `posj.w + pos2.w - posj.x*pos2.x - posj.y*pos2.y - posj.z*pos2.z < 0.5f * PADDED_CUTOFF_SQUARED` is expressed as
+                    // `posj.x*pos2.x - posj.y*pos2.y - posj.z*pos2.z - posj.w - 0.5f * PADDED_CUTOFF_SQUARED - pos2.w` and computed using fma
+                    // (it saves 1 instruction).
+                    // Sign bit is used directly instead of `halfDist2 < 0.5f * PADDED_CUTOFF_SQUARED ? 1<<j : 0`.
     #ifdef USE_PERIODIC
                     if (!singlePeriodicCopy) {
                         while (atomFlags) {
@@ -316,7 +330,8 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
                             atomFlags = atomFlags ^ (static_cast<tileflags>(1) << j);
                             real3 delta = trimTo3(pos2)-trimTo3(posBuffer[warpStart+j]);
                             APPLY_PERIODIC_TO_DELTA(delta)
-                            interacts |= (delta.x*delta.x+delta.y*delta.y+delta.z*delta.z < PADDED_CUTOFF_SQUARED ? static_cast<tileflags>(1)<<j : 0);
+                            real d = delta.x*delta.x+delta.y*delta.y+delta.z*delta.z - PADDED_CUTOFF_SQUARED;
+                            interacts |= static_cast<tileflags>(extractSignBit(d)) << j;
                         }
                     }
                     else {
@@ -327,21 +342,24 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
                                 int j = __TILEFLAGS_FFS(atomFlags)-1;
                                 atomFlags = atomFlags ^ (static_cast<tileflags>(1) << j);
                                 real4 posj = posBuffer[warpStart+j];
-                                real halfDist2 = posj.w - posj.x*pos2.x - posj.y*pos2.y - posj.z*pos2.z;
-                                interacts |= (halfDist2 < lim ? static_cast<tileflags>(1)<<j : 0);
+                                real d = fma(-posj.x, pos2.x, fma(-posj.y, pos2.y, fma(-posj.z, pos2.z, posj.w - lim)));
+                                interacts |= static_cast<tileflags>(extractSignBit(d)) << j;
                             }
                         }
                         else {
                             #pragma unroll
                             for (int j = 0; j < TILE_SIZE; j++) {
                                 real4 posj = posBuffer[warpStart+j];
-                                real halfDist2 = posj.w - posj.x*pos2.x - posj.y*pos2.y - posj.z*pos2.z;
-                                interacts |= (halfDist2 < lim ? static_cast<tileflags>(1)<<j : 0);
+                                real d = fma(-posj.x, pos2.x, fma(-posj.y, pos2.y, fma(-posj.z, pos2.z, posj.w - lim)));
+                                interacts |= static_cast<tileflags>(extractSignBit(d)) << j;
                             }
                         }
     #ifdef USE_PERIODIC
                     }
     #endif
+                }
+                if (atom2 >= NUM_ATOMS) {
+                    interacts = 0;
                 }
 
                 const int interactCount = __TILEFLAGS_POPC(interacts);
