@@ -210,7 +210,7 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
 
     const int indexInWarp = threadIdx.x%TILE_SIZE;
     const int warpStart = threadIdx.x-indexInWarp;
-    const int warpIndex = (blockIdx.x*blockDim.x+threadIdx.x)/TILE_SIZE;
+    const int warpIndex = blockIdx.x*(GROUP_SIZE/TILE_SIZE) + (GROUP_SIZE == TILE_SIZE ? 0 : threadIdx.x/TILE_SIZE);
     const tileflags warpMask = (static_cast<tileflags>(1)<<indexInWarp)-1;
     __shared__ int workgroupBuffer[BUFFER_SIZE*(GROUP_SIZE/TILE_SIZE)];
     __shared__ int warpExclusions[MAX_EXCLUSIONS*(GROUP_SIZE/TILE_SIZE)];
@@ -312,7 +312,7 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
     #endif
                 pos2.w = 0.5f * (pos2.x * pos2.x + pos2.y * pos2.y + pos2.z * pos2.z);
                 real4 blockCenterY = sortedBlockCenter[block2Base+i*NUM_TILES_IN_BATCH];
-                real3 atomDelta = trimTo3(posBuffer[warpStart+indexInWarp])-trimTo3(blockCenterY);
+                real3 atomDelta = trimTo3(pos1)-trimTo3(blockCenterY);
     #ifdef USE_PERIODIC
                 APPLY_PERIODIC_TO_DELTA(atomDelta)
     #endif
@@ -439,7 +439,7 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
 
     // Record the positions the neighbor list is based on.
 
-    int i = threadIdx.x+blockIdx.x*blockDim.x;
+    int i = threadIdx.x+blockIdx.x*GROUP_SIZE;
     if (i < NUM_ATOMS) {
         oldPositions[i] = posq[i];
     }
