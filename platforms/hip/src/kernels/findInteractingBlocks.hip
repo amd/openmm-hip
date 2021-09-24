@@ -149,6 +149,29 @@ unsigned int extractSignBit(double d) {
     return ((unsigned int)__double2hiint(d)) >> 31;
 }
 
+#if TILE_SIZE == 64 && !defined(USE_DOUBLE_PRECISION) && \
+    (defined(__gfx908__) || defined(__gfx90a__))
+
+#define USE_MFMA
+
+using vfloat = __attribute__((__vector_size__(4 * sizeof(float)))) float;
+
+template<int BlockId>
+inline __device__
+void mfma4x4(const float4& pos1, const float4& pos2, const vfloat& c, unsigned int& interacts) {
+    vfloat d;
+    d = __builtin_amdgcn_mfma_f32_4x4x1f32(pos1.x, -pos2.x, c, 4, BlockId, 0);
+    d = __builtin_amdgcn_mfma_f32_4x4x1f32(pos1.y, -pos2.y, d, 4, BlockId, 0);
+    d = __builtin_amdgcn_mfma_f32_4x4x1f32(pos1.z, -pos2.z, d, 4, BlockId, 0);
+    d = __builtin_amdgcn_mfma_f32_4x4x1f32(pos1.w,    1.0f, d, 4, BlockId, 0);
+    #pragma unroll
+    for (int i = 0; i < 4; i++) {
+        interacts |= extractSignBit(d[i]) << (BlockId * 4 + i)%32;
+    }
+}
+
+#endif
+
 /**
  * Compare the bounding boxes for each pair of atom blocks (comprised of TILE_SIZE atoms each), forming a tile. If the two
  * atom blocks are sufficiently far apart, mark them as non-interacting. There are two stages in the algorithm.
@@ -337,6 +360,50 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
                     else {
     #endif
                         const real lim = 0.5f * PADDED_CUTOFF_SQUARED - pos2.w;
+    #if defined(USE_MFMA)
+                        unsigned int interacts0 = 0;
+                        unsigned int interacts1 = 0;
+                        const vfloat c = { -lim, -lim, -lim, -lim };
+                        if (__TILEFLAGS_POPC(atomFlags) < TILE_SIZE/2) {
+                            const unsigned int atomFlags0 = static_cast<unsigned int>(atomFlags);
+                            const unsigned int atomFlags1 = static_cast<unsigned int>(atomFlags >> 32);
+                            if (atomFlags0 & (0xf << 0*4)) mfma4x4<0+0>(pos1, pos2, c, interacts0);
+                            if (atomFlags0 & (0xf << 1*4)) mfma4x4<0+1>(pos1, pos2, c, interacts0);
+                            if (atomFlags0 & (0xf << 2*4)) mfma4x4<0+2>(pos1, pos2, c, interacts0);
+                            if (atomFlags0 & (0xf << 3*4)) mfma4x4<0+3>(pos1, pos2, c, interacts0);
+                            if (atomFlags0 & (0xf << 4*4)) mfma4x4<0+4>(pos1, pos2, c, interacts0);
+                            if (atomFlags0 & (0xf << 5*4)) mfma4x4<0+5>(pos1, pos2, c, interacts0);
+                            if (atomFlags0 & (0xf << 6*4)) mfma4x4<0+6>(pos1, pos2, c, interacts0);
+                            if (atomFlags0 & (0xf << 7*4)) mfma4x4<0+7>(pos1, pos2, c, interacts0);
+                            if (atomFlags1 & (0xf << 0*4)) mfma4x4<8+0>(pos1, pos2, c, interacts1);
+                            if (atomFlags1 & (0xf << 1*4)) mfma4x4<8+1>(pos1, pos2, c, interacts1);
+                            if (atomFlags1 & (0xf << 2*4)) mfma4x4<8+2>(pos1, pos2, c, interacts1);
+                            if (atomFlags1 & (0xf << 3*4)) mfma4x4<8+3>(pos1, pos2, c, interacts1);
+                            if (atomFlags1 & (0xf << 4*4)) mfma4x4<8+4>(pos1, pos2, c, interacts1);
+                            if (atomFlags1 & (0xf << 5*4)) mfma4x4<8+5>(pos1, pos2, c, interacts1);
+                            if (atomFlags1 & (0xf << 6*4)) mfma4x4<8+6>(pos1, pos2, c, interacts1);
+                            if (atomFlags1 & (0xf << 7*4)) mfma4x4<8+7>(pos1, pos2, c, interacts1);
+                        }
+                        else {
+                            mfma4x4<0+0>(pos1, pos2, c, interacts0);
+                            mfma4x4<0+1>(pos1, pos2, c, interacts0);
+                            mfma4x4<0+2>(pos1, pos2, c, interacts0);
+                            mfma4x4<0+3>(pos1, pos2, c, interacts0);
+                            mfma4x4<0+4>(pos1, pos2, c, interacts0);
+                            mfma4x4<0+5>(pos1, pos2, c, interacts0);
+                            mfma4x4<0+6>(pos1, pos2, c, interacts0);
+                            mfma4x4<0+7>(pos1, pos2, c, interacts0);
+                            mfma4x4<8+0>(pos1, pos2, c, interacts1);
+                            mfma4x4<8+1>(pos1, pos2, c, interacts1);
+                            mfma4x4<8+2>(pos1, pos2, c, interacts1);
+                            mfma4x4<8+3>(pos1, pos2, c, interacts1);
+                            mfma4x4<8+4>(pos1, pos2, c, interacts1);
+                            mfma4x4<8+5>(pos1, pos2, c, interacts1);
+                            mfma4x4<8+6>(pos1, pos2, c, interacts1);
+                            mfma4x4<8+7>(pos1, pos2, c, interacts1);
+                        }
+                        interacts = (static_cast<tileflags>(interacts1) << 32) | static_cast<tileflags>(interacts0);
+    #else
                         if (__TILEFLAGS_POPC(atomFlags) < TILE_SIZE/2 && TILE_SIZE == warpSize) {
                             while (atomFlags) {
                                 int j = __TILEFLAGS_FFS(atomFlags)-1;
@@ -354,6 +421,7 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
                                 interacts |= static_cast<tileflags>(extractSignBit(d)) << j;
                             }
                         }
+    #endif
     #ifdef USE_PERIODIC
                     }
     #endif
