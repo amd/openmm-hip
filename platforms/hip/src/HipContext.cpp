@@ -140,7 +140,11 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
         for (int i = 0; i < static_cast<int>(devicePrecedence.size()); i++) {
             int trialDeviceIndex = devicePrecedence[i];
             CHECK_RESULT(hipDeviceGet(&device, trialDeviceIndex));
-            defaultOptimizationOptions = "-ffast-math -munsafe-fp-atomics -Wall";
+            // HIP-TODO: DPP instructions in nonbonded.hip can cause a compiler crash in 'GCN DPP Combine' pass.
+            // Disabling this pass should not affect performance because there are no cases where
+            // instructions like v_mov_dpp and v_add_f32 can be combined into one v_add_f32_dpp.
+            // Remove -mllvm -amdgpu-dpp-combine=false when the compiler issue is fixed.
+            defaultOptimizationOptions = "-ffast-math -munsafe-fp-atomics -Wall -mllvm -amdgpu-dpp-combine=false";
             // try setting device
             if (hipSetDevice(device) == hipSuccess) {
                 // and set flags

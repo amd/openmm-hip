@@ -1,5 +1,3 @@
-#define real_shfl SHFL
-
 /**
  * Compute nonbonded interactions. The kernel is separated into two parts,
  * tiles with exclusions and tiles without exclusions. It relies heavily on
@@ -73,7 +71,7 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
 #endif
         PARAMETER_ARGUMENTS) {
     const unsigned int totalWarps = (blockDim.x*gridDim.x)/TILE_SIZE;
-    const unsigned int warp = (blockIdx.x*blockDim.x+threadIdx.x)/TILE_SIZE; // global warpIndex
+    const unsigned int warp = blockIdx.x*(THREAD_BLOCK_SIZE/TILE_SIZE) + (THREAD_BLOCK_SIZE == TILE_SIZE ? 0 : threadIdx.x/TILE_SIZE); // global warpIndex
     const unsigned int tgx = threadIdx.x & (TILE_SIZE-1); // index within the warp
     const unsigned int tbx = threadIdx.x - tgx;           // block warpIndex
     mixed energy = 0;
@@ -92,13 +90,13 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
 #ifdef USE_EXCLUSIONS
         tileflags excl = exclusions[pos*TILE_SIZE+tgx];
 #endif
-        const bool hasExclusions = true;
         if (x == y) {
             // This tile is on the diagonal.
             real4 shflPosq = posq1;
 
             // we do not need to fetch parameters from global since this is a symmetric tile
             // instead we can broadcast the values using shuffle
+            #pragma unroll 2
             for (unsigned int j = 0; j < TILE_SIZE; j++) {
                 real4 posq2;
                 BROADCAST_WARP_DATA
@@ -107,33 +105,41 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
                 APPLY_PERIODIC_TO_DELTA(delta)
 #endif
                 real r2 = delta.x*delta.x + delta.y*delta.y + delta.z*delta.z;
-                real invR = RSQRT(r2);
-                real r = r2*invR;
-                LOAD_ATOM2_PARAMETERS
-                int atom2 = y*TILE_SIZE+j;
+#ifdef USE_CUTOFF
+                if (r2 < MAX_CUTOFF_SQUARED) {
+#endif
+                    real invR = RSQRT(r2);
+                    real r = r2*invR;
+                    LOAD_ATOM2_PARAMETERS
+                    int atom2 = y*TILE_SIZE+j;
 #ifdef USE_SYMMETRIC
-                real dEdR = 0.0f;
+                    real dEdR = 0.0f;
 #else
-                real3 dEdR1 = make_real3(0);
-                real3 dEdR2 = make_real3(0);
+                    real3 dEdR1 = make_real3(0);
+                    real3 dEdR2 = make_real3(0);
 #endif
 #ifdef USE_EXCLUSIONS
-                bool isExcluded = !(atom1 < NUM_ATOMS && atom2 < NUM_ATOMS && ((unsigned int)excl & 1));
+                    bool isExcluded = !(atom1 < NUM_ATOMS && atom2 < NUM_ATOMS && ((unsigned int)excl & 1));
 #endif
-                real tempEnergy = 0.0f;
-                const real interactionScale = 0.5f;
-                COMPUTE_INTERACTION
-                energy += 0.5f*tempEnergy;
+                    real tempEnergy = 0.0f;
+                    const real interactionScale = 0.5f;
+                    COMPUTE_INTERACTION
+#ifdef INCLUDE_ENERGY
+                    energy += 0.5f*tempEnergy;
+#endif
 #ifdef INCLUDE_FORCES
 #ifdef USE_SYMMETRIC
-                force.x -= delta.x*dEdR;
-                force.y -= delta.y*dEdR;
-                force.z -= delta.z*dEdR;
+                    force.x -= delta.x*dEdR;
+                    force.y -= delta.y*dEdR;
+                    force.z -= delta.z*dEdR;
 #else
-                force.x -= dEdR1.x;
-                force.y -= dEdR1.y;
-                force.z -= dEdR1.z;
+                    force.x -= dEdR1.x;
+                    force.y -= dEdR1.y;
+                    force.z -= dEdR1.z;
 #endif
+#endif
+#ifdef USE_CUTOFF
+                }
 #endif
 #ifdef USE_EXCLUSIONS
                 excl >>= 1;
@@ -143,6 +149,7 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
         else {
             // This is an off-diagonal tile.
             unsigned int j = y*TILE_SIZE + tgx;
+            int atomIndex = j;
             real4 shflPosq = posq[j];
             real3 shflForce;
             shflForce.x = 0.0f;
@@ -153,7 +160,7 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
 #ifdef USE_EXCLUSIONS
             excl = (excl >> tgx) | (excl << (TILE_SIZE - tgx));
 #endif
-            unsigned int tj = tgx;
+            #pragma unroll 2
             for (j = 0; j < TILE_SIZE; j++) {
                 real4 posq2 = shflPosq;
                 real3 delta = make_real3(posq2.x-posq1.x, posq2.y-posq1.y, posq2.z-posq1.z);
@@ -161,50 +168,56 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
                 APPLY_PERIODIC_TO_DELTA(delta)
 #endif
                 real r2 = delta.x*delta.x + delta.y*delta.y + delta.z*delta.z;
-                real invR = RSQRT(r2);
-                real r = r2*invR;
-                LOAD_ATOM2_PARAMETERS
-                int atom2 = y*TILE_SIZE+tj;
+#ifdef USE_CUTOFF
+                if (r2 < MAX_CUTOFF_SQUARED) {
+#endif
+                    real invR = RSQRT(r2);
+                    real r = r2*invR;
+                    LOAD_ATOM2_PARAMETERS
+                    int atom2 = atomIndex;
 #ifdef USE_SYMMETRIC
-                real dEdR = 0.0f;
+                    real dEdR = 0.0f;
 #else
-                real3 dEdR1 = make_real3(0);
-                real3 dEdR2 = make_real3(0);
+                    real3 dEdR1 = make_real3(0);
+                    real3 dEdR2 = make_real3(0);
 #endif
 #ifdef USE_EXCLUSIONS
-                bool isExcluded = !(atom1 < NUM_ATOMS && atom2 < NUM_ATOMS && ((unsigned int)excl & 1));
+                    bool isExcluded = !(atom1 < NUM_ATOMS && atom2 < NUM_ATOMS && ((unsigned int)excl & 1));
 #endif
-                real tempEnergy = 0.0f;
-                const real interactionScale = 1.0f;
-                COMPUTE_INTERACTION
-                energy += tempEnergy;
+                    real tempEnergy = 0.0f;
+                    const real interactionScale = 1.0f;
+                    COMPUTE_INTERACTION
+#ifdef INCLUDE_ENERGY
+                    energy += tempEnergy;
+#endif
 #ifdef INCLUDE_FORCES
 #ifdef USE_SYMMETRIC
-                delta *= dEdR;
-                force.x -= delta.x;
-                force.y -= delta.y;
-                force.z -= delta.z;
-                shflForce.x += delta.x;
-                shflForce.y += delta.y;
-                shflForce.z += delta.z;
+                    delta *= dEdR;
+                    force.x -= delta.x;
+                    force.y -= delta.y;
+                    force.z -= delta.z;
+                    shflForce.x += delta.x;
+                    shflForce.y += delta.y;
+                    shflForce.z += delta.z;
 #else // !USE_SYMMETRIC
-                force.x -= dEdR1.x;
-                force.y -= dEdR1.y;
-                force.z -= dEdR1.z;
-                shflForce.x += dEdR2.x;
-                shflForce.y += dEdR2.y;
-                shflForce.z += dEdR2.z;
+                    force.x -= dEdR1.x;
+                    force.y -= dEdR1.y;
+                    force.z -= dEdR1.z;
+                    shflForce.x += dEdR2.x;
+                    shflForce.y += dEdR2.y;
+                    shflForce.z += dEdR2.z;
 #endif // end USE_SYMMETRIC
 #endif
-                SHUFFLE_WARP_DATA
+#ifdef USE_CUTOFF
+                }
+#endif
 #ifdef USE_EXCLUSIONS
                 excl >>= 1;
 #endif
-                // cycles the indices
-                // 0 1 2 3 4 5 6 7 -> 1 2 3 4 5 6 7 0
-                tj = (tj + 1) & (TILE_SIZE - 1);
+                SHUFFLE_WARP_DATA
+                atomIndex = warpRotateLeft<TILE_SIZE>(atomIndex);
             }
-            const unsigned int offset = y*TILE_SIZE + tgx;
+            const unsigned int offset = atomIndex;
             // write results for off diagonal tiles
 #ifdef INCLUDE_FORCES
             atomicAdd(&forceBuffers[offset], static_cast<unsigned long long>((long long) (shflForce.x*0x100000000)));
@@ -223,10 +236,6 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
 
     // Second loop: tiles without exclusions, either from the neighbor list (with cutoff) or just enumerating all
     // of them (no cutoff).
-
-    // atomIndices can probably be shuffled as well
-    // but it probably wouldn't make things any faster
-    __shared__ int atomIndices[THREAD_BLOCK_SIZE];
 
 #ifdef USE_CUTOFF
     const unsigned int numTiles = interactionCount[0];
@@ -247,7 +256,6 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
     skipTiles = -1;
     for (; pos < end; pos++) {
 #endif
-        const bool hasExclusions = false;
         real3 force = make_real3(0);
         bool includeTile = true;
 
@@ -294,7 +302,7 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
 #else
             unsigned int j = y*TILE_SIZE + tgx;
 #endif
-            atomIndices[threadIdx.x] = j;
+            int atomIndex = j;
             DECLARE_LOCAL_PARAMETERS
             real4 shflPosq;
             real3 shflForce;
@@ -317,55 +325,63 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
                 real4 blockCenterX = blockCenter[x];
                 APPLY_PERIODIC_TO_POS_WITH_CENTER(posq1, blockCenterX)
                 APPLY_PERIODIC_TO_POS_WITH_CENTER(shflPosq, blockCenterX)
-                unsigned int tj = tgx;
+                #pragma unroll 2
                 for (j = 0; j < TILE_SIZE; j++) {
                     real4 posq2 = shflPosq;
                     real3 delta = make_real3(posq2.x-posq1.x, posq2.y-posq1.y, posq2.z-posq1.z);
                     real r2 = delta.x*delta.x + delta.y*delta.y + delta.z*delta.z;
-                    real invR = RSQRT(r2);
-                    real r = r2*invR;
-                    LOAD_ATOM2_PARAMETERS
-                    int atom2 = atomIndices[tbx+tj];
+#ifdef USE_CUTOFF
+                    if (r2 < MAX_CUTOFF_SQUARED) {
+#endif
+                        real invR = RSQRT(r2);
+                        real r = r2*invR;
+                        LOAD_ATOM2_PARAMETERS
+                        int atom2 = atomIndex;
 #ifdef USE_SYMMETRIC
-                    real dEdR = 0.0f;
+                        real dEdR = 0.0f;
 #else
-                    real3 dEdR1 = make_real3(0);
-                    real3 dEdR2 = make_real3(0);
+                        real3 dEdR1 = make_real3(0);
+                        real3 dEdR2 = make_real3(0);
 #endif
 #ifdef USE_EXCLUSIONS
-                    bool isExcluded = !(atom1 < NUM_ATOMS && atom2 < NUM_ATOMS);
+                        bool isExcluded = !(atom1 < NUM_ATOMS && atom2 < NUM_ATOMS);
 #endif
-                    real tempEnergy = 0.0f;
-                    const real interactionScale = 1.0f;
-                    COMPUTE_INTERACTION
-                    energy += tempEnergy;
+                        real tempEnergy = 0.0f;
+                        const real interactionScale = 1.0f;
+                        COMPUTE_INTERACTION
+#ifdef INCLUDE_ENERGY
+                        energy += tempEnergy;
+#endif
 #ifdef INCLUDE_FORCES
 #ifdef USE_SYMMETRIC
-                    delta *= dEdR;
-                    force.x -= delta.x;
-                    force.y -= delta.y;
-                    force.z -= delta.z;
-                    shflForce.x += delta.x;
-                    shflForce.y += delta.y;
-                    shflForce.z += delta.z;
+                        delta *= dEdR;
+                        force.x -= delta.x;
+                        force.y -= delta.y;
+                        force.z -= delta.z;
+                        shflForce.x += delta.x;
+                        shflForce.y += delta.y;
+                        shflForce.z += delta.z;
 #else // !USE_SYMMETRIC
-                    force.x -= dEdR1.x;
-                    force.y -= dEdR1.y;
-                    force.z -= dEdR1.z;
-                    shflForce.x += dEdR2.x;
-                    shflForce.y += dEdR2.y;
-                    shflForce.z += dEdR2.z;
+                        force.x -= dEdR1.x;
+                        force.y -= dEdR1.y;
+                        force.z -= dEdR1.z;
+                        shflForce.x += dEdR2.x;
+                        shflForce.y += dEdR2.y;
+                        shflForce.z += dEdR2.z;
 #endif // end USE_SYMMETRIC
 #endif
+#ifdef USE_CUTOFF
+                    }
+#endif
                     SHUFFLE_WARP_DATA
-                    tj = (tj + 1) & (TILE_SIZE - 1);
+                    atomIndex = warpRotateLeft<TILE_SIZE>(atomIndex);
                 }
             }
             else
 #endif
             {
                 // We need to apply periodic boundary conditions separately for each interaction.
-                unsigned int tj = tgx;
+                #pragma unroll 2
                 for (j = 0; j < TILE_SIZE; j++) {
                     real4 posq2 = shflPosq;
                     real3 delta = make_real3(posq2.x-posq1.x, posq2.y-posq1.y, posq2.z-posq1.z);
@@ -373,43 +389,51 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
                     APPLY_PERIODIC_TO_DELTA(delta)
 #endif
                     real r2 = delta.x*delta.x + delta.y*delta.y + delta.z*delta.z;
-                    real invR = RSQRT(r2);
-                    real r = r2*invR;
-                    LOAD_ATOM2_PARAMETERS
-                    int atom2 = atomIndices[tbx+tj];
+#ifdef USE_CUTOFF
+                    if (r2 < MAX_CUTOFF_SQUARED) {
+#endif
+                        real invR = RSQRT(r2);
+                        real r = r2*invR;
+                        LOAD_ATOM2_PARAMETERS
+                        int atom2 = atomIndex;
 #ifdef USE_SYMMETRIC
-                    real dEdR = 0.0f;
+                        real dEdR = 0.0f;
 #else
-                    real3 dEdR1 = make_real3(0);
-                    real3 dEdR2 = make_real3(0);
+                        real3 dEdR1 = make_real3(0);
+                        real3 dEdR2 = make_real3(0);
 #endif
 #ifdef USE_EXCLUSIONS
-                    bool isExcluded = !(atom1 < NUM_ATOMS && atom2 < NUM_ATOMS);
+                        bool isExcluded = !(atom1 < NUM_ATOMS && atom2 < NUM_ATOMS);
 #endif
-                    real tempEnergy = 0.0f;
-                    const real interactionScale = 1.0f;
-                    COMPUTE_INTERACTION
-                    energy += tempEnergy;
+                        real tempEnergy = 0.0f;
+                        const real interactionScale = 1.0f;
+                        COMPUTE_INTERACTION
+#ifdef INCLUDE_ENERGY
+                        energy += tempEnergy;
+#endif
 #ifdef INCLUDE_FORCES
 #ifdef USE_SYMMETRIC
-                    delta *= dEdR;
-                    force.x -= delta.x;
-                    force.y -= delta.y;
-                    force.z -= delta.z;
-                    shflForce.x += delta.x;
-                    shflForce.y += delta.y;
-                    shflForce.z += delta.z;
+                        delta *= dEdR;
+                        force.x -= delta.x;
+                        force.y -= delta.y;
+                        force.z -= delta.z;
+                        shflForce.x += delta.x;
+                        shflForce.y += delta.y;
+                        shflForce.z += delta.z;
 #else // !USE_SYMMETRIC
-                    force.x -= dEdR1.x;
-                    force.y -= dEdR1.y;
-                    force.z -= dEdR1.z;
-                    shflForce.x += dEdR2.x;
-                    shflForce.y += dEdR2.y;
-                    shflForce.z += dEdR2.z;
+                        force.x -= dEdR1.x;
+                        force.y -= dEdR1.y;
+                        force.z -= dEdR1.z;
+                        shflForce.x += dEdR2.x;
+                        shflForce.y += dEdR2.y;
+                        shflForce.z += dEdR2.z;
 #endif // end USE_SYMMETRIC
 #endif
+#ifdef USE_CUTOFF
+                    }
+#endif
                     SHUFFLE_WARP_DATA
-                    tj = (tj + 1) & (TILE_SIZE - 1);
+                    atomIndex = warpRotateLeft<TILE_SIZE>(atomIndex);
                 }
             }
 
@@ -418,11 +442,7 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
             atomicAdd(&forceBuffers[atom1], static_cast<unsigned long long>((long long) (force.x*0x100000000)));
             atomicAdd(&forceBuffers[atom1+PADDED_NUM_ATOMS], static_cast<unsigned long long>((long long) (force.y*0x100000000)));
             atomicAdd(&forceBuffers[atom1+2*PADDED_NUM_ATOMS], static_cast<unsigned long long>((long long) (force.z*0x100000000)));
-#ifdef USE_CUTOFF
-            unsigned int atom2 = atomIndices[threadIdx.x];
-#else
-            unsigned int atom2 = y*TILE_SIZE + tgx;
-#endif
+            unsigned int atom2 = atomIndex;
             if (atom2 < PADDED_NUM_ATOMS) {
                 atomicAdd(&forceBuffers[atom2], static_cast<unsigned long long>((long long) (shflForce.x*0x100000000)));
                 atomicAdd(&forceBuffers[atom2+PADDED_NUM_ATOMS], static_cast<unsigned long long>((long long) (shflForce.y*0x100000000)));
@@ -444,42 +464,45 @@ extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void compu
         int atom2 = pair.y;
         real4 posq1 = posq[atom1];
         real4 posq2 = posq[atom2];
-        LOAD_ATOM1_PARAMETERS
-        int j = atom2;
-        DECLARE_LOCAL_PARAMETERS
-        LOAD_LOCAL_PARAMETERS_FROM_GLOBAL
-        LOAD_ATOM2_PARAMETERS
         real3 delta = make_real3(posq2.x-posq1.x, posq2.y-posq1.y, posq2.z-posq1.z);
 #ifdef USE_PERIODIC
         APPLY_PERIODIC_TO_DELTA(delta)
 #endif
         real r2 = delta.x*delta.x + delta.y*delta.y + delta.z*delta.z;
-        real invR = RSQRT(r2);
-        real r = r2*invR;
+        if (r2 < MAX_CUTOFF_SQUARED) {
+            LOAD_ATOM1_PARAMETERS
+            int j = atom2;
+            DECLARE_LOCAL_PARAMETERS
+            LOAD_LOCAL_PARAMETERS_FROM_GLOBAL
+            LOAD_ATOM2_PARAMETERS
+            real invR = RSQRT(r2);
+            real r = r2*invR;
 #ifdef USE_SYMMETRIC
-        real dEdR = 0.0f;
+            real dEdR = 0.0f;
 #else
-        real3 dEdR1 = make_real3(0);
-        real3 dEdR2 = make_real3(0);
+            real3 dEdR1 = make_real3(0);
+            real3 dEdR2 = make_real3(0);
 #endif
-        bool hasExclusions = false;
-        bool isExcluded = false;
-        real tempEnergy = 0.0f;
-        const real interactionScale = 1.0f;
-        COMPUTE_INTERACTION
-        energy += tempEnergy;
+            bool isExcluded = false;
+            real tempEnergy = 0.0f;
+            const real interactionScale = 1.0f;
+            COMPUTE_INTERACTION
+#ifdef INCLUDE_ENERGY
+            energy += tempEnergy;
+#endif
 #ifdef INCLUDE_FORCES
 #ifdef USE_SYMMETRIC
-        real3 dEdR1 = delta*dEdR;
-        real3 dEdR2 = -dEdR1;
+            real3 dEdR1 = delta*dEdR;
+            real3 dEdR2 = -dEdR1;
 #endif
-        atomicAdd(&forceBuffers[atom1], static_cast<unsigned long long>((long long) (-dEdR1.x*0x100000000)));
-        atomicAdd(&forceBuffers[atom1+PADDED_NUM_ATOMS], static_cast<unsigned long long>((long long) (-dEdR1.y*0x100000000)));
-        atomicAdd(&forceBuffers[atom1+2*PADDED_NUM_ATOMS], static_cast<unsigned long long>((long long) (-dEdR1.z*0x100000000)));
-        atomicAdd(&forceBuffers[atom2], static_cast<unsigned long long>((long long) (-dEdR2.x*0x100000000)));
-        atomicAdd(&forceBuffers[atom2+PADDED_NUM_ATOMS], static_cast<unsigned long long>((long long) (-dEdR2.y*0x100000000)));
-        atomicAdd(&forceBuffers[atom2+2*PADDED_NUM_ATOMS], static_cast<unsigned long long>((long long) (-dEdR2.z*0x100000000)));
+            atomicAdd(&forceBuffers[atom1], static_cast<unsigned long long>((long long) (-dEdR1.x*0x100000000)));
+            atomicAdd(&forceBuffers[atom1+PADDED_NUM_ATOMS], static_cast<unsigned long long>((long long) (-dEdR1.y*0x100000000)));
+            atomicAdd(&forceBuffers[atom1+2*PADDED_NUM_ATOMS], static_cast<unsigned long long>((long long) (-dEdR1.z*0x100000000)));
+            atomicAdd(&forceBuffers[atom2], static_cast<unsigned long long>((long long) (-dEdR2.x*0x100000000)));
+            atomicAdd(&forceBuffers[atom2+PADDED_NUM_ATOMS], static_cast<unsigned long long>((long long) (-dEdR2.y*0x100000000)));
+            atomicAdd(&forceBuffers[atom2+2*PADDED_NUM_ATOMS], static_cast<unsigned long long>((long long) (-dEdR2.z*0x100000000)));
 #endif
+        }
     }
 #endif
 #ifdef INCLUDE_ENERGY

@@ -564,17 +564,17 @@ hipFunction_t HipNonbondedUtilities::createInteractionKernel(const string& sourc
     // Part 1. Defines for on diagonal exclusion tiles
 
     stringstream broadcastWarpData;
-    broadcastWarpData << "posq2.x = real_shfl(shflPosq.x, j);\n";
-    broadcastWarpData << "posq2.y = real_shfl(shflPosq.y, j);\n";
-    broadcastWarpData << "posq2.z = real_shfl(shflPosq.z, j);\n";
-    broadcastWarpData << "posq2.w = real_shfl(shflPosq.w, j);\n";
+    broadcastWarpData << "posq2.x = SHFL(shflPosq.x, j);\n";
+    broadcastWarpData << "posq2.y = SHFL(shflPosq.y, j);\n";
+    broadcastWarpData << "posq2.z = SHFL(shflPosq.z, j);\n";
+    broadcastWarpData << "posq2.w = SHFL(shflPosq.w, j);\n";
     for (const ParameterInfo& param : params) {
         broadcastWarpData << param.getType() << " shfl" << param.getName() << ";\n";
         for (int j = 0; j < param.getNumComponents(); j++) {
             if (param.getNumComponents() == 1)
-                broadcastWarpData << "shfl" << param.getName() << "=real_shfl(" << param.getName() <<"1,j);\n";
+                broadcastWarpData << "shfl" << param.getName() << "=SHFL(" << param.getName() <<"1,j);\n";
             else
-                broadcastWarpData << "shfl" << param.getName()+"."+suffixes[j] << "=real_shfl(" << param.getName()+"1."+suffixes[j] <<",j);\n";
+                broadcastWarpData << "shfl" << param.getName()+"."+suffixes[j] << "=SHFL(" << param.getName()+"1."+suffixes[j] <<",j);\n";
         }
     }
     replacements["BROADCAST_WARP_DATA"] = broadcastWarpData.str();
@@ -620,25 +620,10 @@ hipFunction_t HipNonbondedUtilities::createInteractionKernel(const string& sourc
     replacements["SAVE_DERIVATIVES"] = saveDerivs.str();
 
     stringstream shuffleWarpData;
-    shuffleWarpData << "shflPosq.x = real_shfl(shflPosq.x, tgx+1);\n";
-    shuffleWarpData << "shflPosq.y = real_shfl(shflPosq.y, tgx+1);\n";
-    shuffleWarpData << "shflPosq.z = real_shfl(shflPosq.z, tgx+1);\n";
-    shuffleWarpData << "shflPosq.w = real_shfl(shflPosq.w, tgx+1);\n";
-    shuffleWarpData << "shflForce.x = real_shfl(shflForce.x, tgx+1);\n";
-    shuffleWarpData << "shflForce.y = real_shfl(shflForce.y, tgx+1);\n";
-    shuffleWarpData << "shflForce.z = real_shfl(shflForce.z, tgx+1);\n";
+    shuffleWarpData << "shflPosq = warpRotateLeft<TILE_SIZE>(shflPosq);\n";
+    shuffleWarpData << "shflForce = warpRotateLeft<TILE_SIZE>(shflForce);\n";
     for (const ParameterInfo& param : params) {
-        if (param.getNumComponents() == 1)
-            shuffleWarpData<<"shfl"<<param.getName()<<"=real_shfl(shfl"<<param.getName()<<", tgx+1);\n";
-        else {
-            for (int j = 0; j < param.getNumComponents(); j++) {
-                // looks something like shflsigmaEpsilon.x = real_shfl(shflsigmaEpsilon.x,tgx+1);
-                shuffleWarpData<<"shfl"<<param.getName()
-                    <<"."<<suffixes[j]<<"=real_shfl(shfl"
-                    <<param.getName()<<"."<<suffixes[j]
-                    <<", tgx+1);\n";
-            }
-        }
+        shuffleWarpData<<"shfl"<<param.getName()<<"=warpRotateLeft<TILE_SIZE>(shfl"<<param.getName()<<");\n";
     }
     replacements["SHUFFLE_WARP_DATA"] = shuffleWarpData.str();
 
@@ -668,6 +653,7 @@ hipFunction_t HipNonbondedUtilities::createInteractionKernel(const string& sourc
         }
     }
     defines["MAX_CUTOFF"] = context.doubleToString(maxCutoff);
+    defines["MAX_CUTOFF_SQUARED"] = context.doubleToString(maxCutoff*maxCutoff);
     defines["NUM_ATOMS"] = context.intToString(context.getNumAtoms());
     defines["PADDED_NUM_ATOMS"] = context.intToString(context.getPaddedNumAtoms());
     defines["NUM_BLOCKS"] = context.intToString(context.getNumAtomBlocks());

@@ -6,18 +6,12 @@
 __device__ inline int __TILEFLAGS_FFS(unsigned int x) {
     return __ffs(x);
 }
-__device__ inline int __TILEFLAGS_CLZ(unsigned int x) {
-    return __clz(x);
-}
 __device__ inline int __TILEFLAGS_POPC(unsigned int x) {
     return __popc(x);
 }
 #else
 __device__ inline int __TILEFLAGS_FFS(unsigned long long int x) {
     return __ffsll(x);
-}
-__device__ inline int __TILEFLAGS_CLZ(unsigned long long int x) {
-    return __clzll(x);
 }
 __device__ inline int __TILEFLAGS_POPC(unsigned long long int x) {
     return __popcll(x);
