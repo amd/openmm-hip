@@ -280,7 +280,7 @@ void HipNonbondedUtilities::initialize(const System& system) {
             maxTiles = numTiles;
         if (maxTiles < 1)
             maxTiles = 1;
-        maxSinglePairs = 5*numAtoms;
+        maxSinglePairs = 20*numAtoms;
         // HIP-TODO: This may require tuning
         numTilesInBatch = numAtomBlocks < 2000 ? 4 : 1;
         interactingTiles.initialize<int>(context, maxTiles, "interactingTiles");
@@ -385,6 +385,7 @@ double HipNonbondedUtilities::getMaxCutoffDistance() {
 }
 
 double HipNonbondedUtilities::padCutoff(double cutoff) {
+    // HIP-TODO: This may require tuning
     double padding = (usePadding ? 0.08*cutoff : 0.0);
     return cutoff+padding;
 }
@@ -515,7 +516,8 @@ void HipNonbondedUtilities::createKernelsForGroups(int groups) {
         if (context.getBoxIsTriclinic())
             defines["TRICLINIC"] = "1";
         defines["MAX_EXCLUSIONS"] = context.intToString(maxExclusions);
-        defines["MAX_BITS_FOR_PAIRS"] = (canUsePairList ? "4" : "0");
+        // HIP-TODO: This may require tuning
+        defines["MAX_BITS_FOR_PAIRS"] = (canUsePairList ? "8" : "0");
         defines["NUM_TILES_IN_BATCH"] = context.intToString(numTilesInBatch);
         hipModule_t interactingBlocksProgram = context.createModule(HipKernelSources::vectorOps+HipKernelSources::findInteractingBlocks, defines);
         kernels.findBlockBoundsKernel = context.getKernel(interactingBlocksProgram, "findBlockBounds");
