@@ -6,8 +6,8 @@
  * Biological Structures at Stanford, funded under the NIH Roadmap for        *
  * Medical Research, grant U54 GM072970. See https://simtk.org.               *
  *                                                                            *
- * Portions copyright (c) 2011-2019 Stanford University and the Authors.      *
- * Portions copyright (C) 2020 Advanced Micro Devices, Inc. All Rights        *
+ * Portions copyright (c) 2011-2021 Stanford University and the Authors.      *
+ * Portions copyright (C) 2020-2021 Advanced Micro Devices, Inc. All Rights   *
  * Reserved.                                                                  *
  * Authors: Peter Eastman, Nicholas Curtis                                    *
  * Contributors:                                                              *
@@ -28,6 +28,7 @@
 
 #include "HipParallelKernels.h"
 #include "HipKernelSources.h"
+#include "openmm/common/ContextSelector.h"
 
 using namespace OpenMM;
 using namespace std;
@@ -72,7 +73,7 @@ public:
     void execute() {
         // Copy coordinates over to this device and execute the kernel.
 
-        cu.setAsCurrent();
+        ContextSelector selector(cu);
         if (cu.getContextIndex() > 0) {
             hipStreamWaitEvent(cu.getCurrentStream(), event, 0);
             if (!cu.getPlatformData().peerAccessSupported)
@@ -103,6 +104,7 @@ public:
     void execute() {
         // Execute the kernel, then download forces.
 
+        ContextSelector selector(cu);
         energy += kernel.finishComputation(context, includeForce, includeEnergy, groups, valid);
         if (cu.getComputeForceCount() < 200) {
             // Record timing information for load balancing.  Since this takes time, only do it at the start of the simulation.
@@ -152,7 +154,7 @@ HipParallelCalcForcesAndEnergyKernel::HipParallelCalcForcesAndEnergyKernel(strin
 }
 
 HipParallelCalcForcesAndEnergyKernel::~HipParallelCalcForcesAndEnergyKernel() {
-    data.contexts[0]->setAsCurrent();
+    ContextSelector selector(*data.contexts[0]);
     if (pinnedPositionBuffer != NULL)
         hipHostFree(pinnedPositionBuffer);
     if (pinnedForceBuffer != NULL)
@@ -165,7 +167,7 @@ HipParallelCalcForcesAndEnergyKernel::~HipParallelCalcForcesAndEnergyKernel() {
 
 void HipParallelCalcForcesAndEnergyKernel::initialize(const System& system) {
     HipContext& cu = *data.contexts[0];
-    cu.setAsCurrent();
+    ContextSelector selector(cu);
     hipModule_t module = cu.createModule(HipKernelSources::parallel);
     sumKernel = cu.getKernel(module, "sumForces");
     int numContexts = data.contexts.size();
@@ -180,7 +182,7 @@ void HipParallelCalcForcesAndEnergyKernel::initialize(const System& system) {
 
 void HipParallelCalcForcesAndEnergyKernel::beginComputation(ContextImpl& context, bool includeForce, bool includeEnergy, int groups) {
     HipContext& cu = *data.contexts[0];
-    cu.setAsCurrent();
+    ContextSelector selector(cu);
     if (!contextForces.isInitialized()) {
         contextForces.initialize<long long>(cu, 3*(data.contexts.size()-1)*cu.getPaddedNumAtoms(), "contextForces");
         CHECK_RESULT(hipHostMalloc((void**) &pinnedForceBuffer, 3*(data.contexts.size()-1)*cu.getPaddedNumAtoms()*sizeof(long long), hipHostMallocPortable), "Error allocating pinned memory");
@@ -226,6 +228,7 @@ double HipParallelCalcForcesAndEnergyKernel::finishComputation(ContextImpl& cont
         // Sum the forces from all devices.
 
         HipContext& cu = *data.contexts[0];
+        ContextSelector selector(cu);
         if (!cu.getPlatformData().peerAccessSupported)
             contextForces.upload(pinnedForceBuffer, false);
         int bufferSize = 3*cu.getPaddedNumAtoms();

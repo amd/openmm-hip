@@ -61,6 +61,7 @@ void testTransform(bool realToComplex, int xsize, int ysize, int zsize, double e
             platform.getPropertyDefaultValue(HipPlatform::HipHostCompiler()), platform.getPropertyDefaultValue(HipPlatform::HipDisablePmeStream()), "false", true, 1, NULL);
     HipContext& context = *platformData.contexts[0];
     context.initialize();
+    context.setAsCurrent();
     OpenMM_SFMT::SFMT sfmt;
     init_gen_rand(0, sfmt);
     vector<Real2> original(xsize*ysize*zsize);

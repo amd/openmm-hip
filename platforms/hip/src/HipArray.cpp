@@ -28,6 +28,7 @@
 
 #include "HipArray.h"
 #include "HipContext.h"
+#include "openmm/common/ContextSelector.h"
 #include <iostream>
 #include <sstream>
 #include <vector>
@@ -43,7 +44,7 @@ HipArray::HipArray(HipContext& context, int size, int elementSize, const std::st
 
 HipArray::~HipArray() {
     if (pointer != 0 && ownsMemory && context->getContextIsValid()) {
-        context->setAsCurrent();
+        ContextSelector selector(*context);
         hipError_t result = hipFree(pointer);
         if (result != hipSuccess) {
             std::stringstream str;
@@ -61,6 +62,7 @@ void HipArray::initialize(ComputeContext& context, int size, int elementSize, co
     this->elementSize = elementSize;
     this->name = name;
     ownsMemory = true;
+    ContextSelector selector(*this->context);
     hipError_t result = hipMalloc(&pointer, size*elementSize);
     if (result != hipSuccess) {
         std::stringstream str;
@@ -74,6 +76,7 @@ void HipArray::resize(int size) {
         throw OpenMMException("HipArray has not been initialized");
     if (!ownsMemory)
         throw OpenMMException("Cannot resize an array that does not own its storage");
+    ContextSelector selector(*context);
     hipError_t result = hipFree(pointer);
     if (result != hipSuccess) {
         std::stringstream str;

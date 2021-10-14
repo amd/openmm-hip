@@ -6,8 +6,8 @@
  * Biological Structures at Stanford, funded under the NIH Roadmap for        *
  * Medical Research, grant U54 GM072970. See https://simtk.org.               *
  *                                                                            *
- * Portions copyright (c) 2009-2019 Stanford University and the Authors.      *
- * Portions copyright (C) 2020 Advanced Micro Devices, Inc. All Rights        *
+ * Portions copyright (c) 2009-2021 Stanford University and the Authors.      *
+ * Portions copyright (C) 2020-2021 Advanced Micro Devices, Inc. All Rights   *
  * Reserved.                                                                  *
  * Authors: Peter Eastman, Nicholas Curtis                                    *
  * Contributors:                                                              *
@@ -28,6 +28,7 @@
 
 #include "HipIntegrationUtilities.h"
 #include "HipContext.h"
+#include "openmm/common/ContextSelector.h"
 
 using namespace OpenMM;
 using namespace std;
@@ -48,7 +49,7 @@ HipIntegrationUtilities::HipIntegrationUtilities(HipContext& context, const Syst
 }
 
 HipIntegrationUtilities::~HipIntegrationUtilities() {
-    context.setAsCurrent();
+    ContextSelector selector(context);
     if (ccmaConvergedMemory != NULL) {
         hipHostFree(ccmaConvergedMemory);
         hipEventDestroy(ccmaEvent);
@@ -68,6 +69,7 @@ HipArray& HipIntegrationUtilities::getStepSize() {
 }
 
 void HipIntegrationUtilities::applyConstraintsImpl(bool constrainVelocities, double tol) {
+    ContextSelector selector(context);
     ComputeKernel settleKernel, shakeKernel, ccmaForceKernel;
     if (constrainVelocities) {
         settleKernel = settleVelKernel;
@@ -133,6 +135,7 @@ void HipIntegrationUtilities::applyConstraintsImpl(bool constrainVelocities, dou
 }
 
 void HipIntegrationUtilities::distributeForcesFromVirtualSites() {
+    ContextSelector selector(context);
     if (numVsites > 0) {
         vsiteForceKernel->setArg(2, context.getLongForceBuffer());
         vsiteForceKernel->execute(numVsites);

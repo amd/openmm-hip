@@ -43,6 +43,7 @@
 #include "HipFFTImplHipFFT.h"
 #include "HipFFTImplVkFFT.h"
 #include "openmm/common/ComputeArray.h"
+#include "openmm/common/ContextSelector.h"
 #include "SHA1.h"
 #include "openmm/Platform.h"
 #include "openmm/System.h"
@@ -189,15 +190,17 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     int numThreadBlocksPerComputeUnit = 6;
 
     contextIsValid = true;
+    ContextSelector selector(*this);
     // note: this is a no-op on AMD GPUs
     CHECK_RESULT(hipDeviceSetCacheConfig(hipFuncCachePreferShared));
     if (contextIndex > 0) {
         int canAccess;
         CHECK_RESULT(hipDeviceCanAccessPeer(&canAccess, getDevice(), platformData.contexts[0]->getDevice()));
         if (canAccess) {
-            platformData.contexts[0]->setAsCurrent();
-            CHECK_RESULT(hipDeviceEnablePeerAccess(getDevice(), 0));
-            setAsCurrent();
+            {
+                ContextSelector selector2(*platformData.contexts[0]);
+                CHECK_RESULT(hipDeviceEnablePeerAccess(getDevice(), 0));
+            }
             CHECK_RESULT(hipDeviceEnablePeerAccess(platformData.contexts[0]->getDevice(), 0));
         }
     }
@@ -371,7 +374,7 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
 }
 
 HipContext::~HipContext() {
-    setAsCurrent();
+    pushAsCurrent();
     for (auto force : forces)
         delete force;
     for (auto listener : reorderListeners)
@@ -390,6 +393,7 @@ HipContext::~HipContext() {
         delete bonded;
     if (nonbonded != NULL)
         delete nonbonded;
+    popAsCurrent();
     string errorMessage = "Error deleting Context";
     if (contextIsValid && !isLinkedContext) {
         roctracer_stop();
@@ -398,7 +402,7 @@ HipContext::~HipContext() {
 }
 
 void HipContext::initialize() {
-    hipSetDevice(device);
+    ContextSelector selector(*this);
     string errorMessage = "Error initializing Context";
     int numEnergyBuffers = max(numThreadBlocks*ThreadBlockSize, nonbonded->getNumEnergyBuffers());
     if (useDoublePrecision) {
@@ -449,6 +453,29 @@ void HipContext::initializeContexts() {
 void HipContext::setAsCurrent() {
     if (contextIsValid)
         hipSetDevice(device);
+}
+
+void HipContext::pushAsCurrent() {
+    if (contextIsValid) {
+        // Emulate cuCtxPushCurrent's behavior
+        hipDevice_t outerScopeDevice;
+        hipGetDevice(&outerScopeDevice);
+        outerScopeDevices.push(outerScopeDevice);
+        if (device != outerScopeDevice) {
+            hipSetDevice(device);
+        }
+    }
+}
+
+void HipContext::popAsCurrent() {
+    if (contextIsValid) {
+        // Emulate cuCtxPopCurrent's behavior
+        hipDevice_t outerScopeDevice = outerScopeDevices.top();
+        outerScopeDevices.pop();
+        if (outerScopeDevice != device) {
+            hipSetDevice(outerScopeDevice);
+        }
+    }
 }
 
 hipModule_t HipContext::createModule(const string source, const char* optimizationFlags) {
