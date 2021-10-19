@@ -141,11 +141,6 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
         for (int i = 0; i < static_cast<int>(devicePrecedence.size()); i++) {
             int trialDeviceIndex = devicePrecedence[i];
             CHECK_RESULT(hipDeviceGet(&device, trialDeviceIndex));
-            // HIP-TODO: DPP instructions in nonbonded.hip can cause a compiler crash in 'GCN DPP Combine' pass.
-            // Disabling this pass should not affect performance because there are no cases where
-            // instructions like v_mov_dpp and v_add_f32 can be combined into one v_add_f32_dpp.
-            // Remove -mllvm -amdgpu-dpp-combine=false when the compiler issue is fixed.
-            defaultOptimizationOptions = "-ffast-math -munsafe-fp-atomics -Wall -mllvm -amdgpu-dpp-combine=false";
             // try setting device
             if (hipSetDevice(device) == hipSuccess) {
                 // and set flags
@@ -478,15 +473,20 @@ void HipContext::popAsCurrent() {
     }
 }
 
-hipModule_t HipContext::createModule(const string source, const char* optimizationFlags) {
-    return createModule(source, map<string, string>(), optimizationFlags);
+hipModule_t HipContext::createModule(const string source) {
+    return createModule(source, map<string, string>());
 }
 
-hipModule_t HipContext::createModule(const string source, const map<string, string>& defines, const char* optimizationFlags) {
+hipModule_t HipContext::createModule(const string source, const map<string, string>& defines) {
     const char* saveTempsEnv = getenv("OPENMM_SAVE_TEMPS");
     bool saveTemps = saveTempsEnv != nullptr;
     string bits = intToString(8*sizeof(void*));
-    string options = (optimizationFlags == NULL ? defaultOptimizationOptions : string(optimizationFlags));
+    string options = "-ffast-math -munsafe-fp-atomics -Wall";
+    // HIP-TODO: DPP instructions in nonbonded.hip can cause a compiler crash in 'GCN DPP Combine' pass.
+    // Disabling this pass should not affect performance because there are no cases where
+    // instructions like v_mov_dpp and v_add_f32 can be combined into one v_add_f32_dpp.
+    // Remove -mllvm -amdgpu-dpp-combine=false when the compiler issue is fixed.
+    options += " -mllvm -amdgpu-dpp-combine=false";
     if (getMaxThreadBlockSize() < 1024) {
         options += " --gpu-max-threads-per-block=" + std::to_string(getMaxThreadBlockSize());
     }

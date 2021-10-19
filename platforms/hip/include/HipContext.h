@@ -282,24 +282,20 @@ public:
         return atomIndexDevice;
     }
     /**
-     * Create a HIP_ module from source code.
+     * Create a HIP module from source code.
      *
      * @param source             the source code of the module
-     * @param optimizationFlags  the optimization flags to pass to the HIP_ compiler.  If this is
-     *                           omitted, a default set of options will be used
      */
-    hipModule_t createModule(const std::string source, const char* optimizationFlags = NULL);
+    hipModule_t createModule(const std::string source);
     /**
-     * Create a HIP_ module from source code.
+     * Create a HIP module from source code.
      *
      * @param source             the source code of the module
      * @param defines            a set of preprocessor definitions (name, value) to define when compiling the program
-     * @param optimizationFlags  the optimization flags to pass to the HIP_ compiler.  If this is
-     *                           omitted, a default set of options will be used
      */
-    hipModule_t createModule(const std::string source, const std::map<std::string, std::string>& defines, const char* optimizationFlags = NULL);
+    hipModule_t createModule(const std::string source, const std::map<std::string, std::string>& defines);
     /**
-     * Get a kernel from a HIP_ module.
+     * Get a kernel from a HIP module.
      *
      * @param module    the module to get the kernel from
      * @param name      the name of the kernel to get
@@ -430,7 +426,7 @@ public:
         return boxIsTriclinic;
     }
     /**
-     * Convert a HIP_ result code to the corresponding string description.
+     * Convert a HIP result code to the corresponding string description.
      */
     static std::string getErrorString(hipError_t result);
     /**
@@ -599,7 +595,6 @@ private:
     std::string compiler, tempDir, cacheDir, gpuArchitecture;
     float4 periodicBoxVecXFloat, periodicBoxVecYFloat, periodicBoxVecZFloat, periodicBoxSizeFloat, invPeriodicBoxSizeFloat;
     double4 periodicBoxVecX, periodicBoxVecY, periodicBoxVecZ, periodicBoxSize, invPeriodicBoxSize;
-    std::string defaultOptimizationOptions;
     std::map<std::string, std::string> compilationDefines;
     hipDevice_t device;
     std::stack<hipDevice_t> outerScopeDevices;
