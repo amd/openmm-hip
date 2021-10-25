@@ -11,23 +11,23 @@ extern "C" {
 __global__ void sortShortList(DATA_TYPE* __restrict__ data, unsigned int length) {
     // Load the data into local memory.
 
-    HIP_DYNAMIC_SHARED( DATA_TYPE, dataBuffer)
+    HIP_DYNAMIC_SHARED(DATA_TYPE, dataBuffer)
     for (int index = threadIdx.x; index < length; index += blockDim.x)
         dataBuffer[index] = data[index];
     __syncthreads();
 
     // Perform a bitonic sort in local memory.
 
-    for (unsigned int k = 2; k < 2*length; k *= 2) {
+    unsigned int lenghtNextPow2 = length <= 2 ? length : (1 << (32 - __clz(length - 1)));
+
+    for (unsigned int k = 2; k <= lenghtNextPow2; k *= 2) {
         for (unsigned int j = k/2; j > 0; j /= 2) {
             for (unsigned int i = threadIdx.x; i < length; i += blockDim.x) {
                 int ixj = i^j;
                 if (ixj > i && ixj < length) {
                     DATA_TYPE value1 = dataBuffer[i];
                     DATA_TYPE value2 = dataBuffer[ixj];
-                    bool ascending = ((i&k) == 0);
-                    for (unsigned int mask = k*2; mask < 2*length; mask *= 2)
-                        ascending = ((i&mask) == 0 ? !ascending : ascending);
+                    bool ascending = (__popc(~i & (lenghtNextPow2 - k)) & 1) == 0;
                     KEY_TYPE lowKey  = (ascending ? getValue(value1) : getValue(value2));
                     KEY_TYPE highKey = (ascending ? getValue(value2) : getValue(value1));
                     if (lowKey > highKey) {
@@ -159,7 +159,7 @@ __global__ void assignElementsToBuckets(const DATA_TYPE* __restrict__ data, unsi
  * is executed as a single work group.
  */
 __global__ __launch_bounds__(1024) void computeBucketPositions(unsigned int numBuckets, unsigned int* __restrict__ bucketOffset, unsigned int* __restrict__ counters) {
-    HIP_DYNAMIC_SHARED( unsigned int, posBuffer)
+    HIP_DYNAMIC_SHARED(unsigned int, posBuffer)
     unsigned int globalOffset = 0;
     for (unsigned int startBucket = 0; startBucket < numBuckets; startBucket += blockDim.x) {
         // Load the bucket sizes into local memory.
@@ -205,7 +205,7 @@ __global__ void copyDataToBuckets(const DATA_TYPE* __restrict__ data, DATA_TYPE*
  * Sort the data in each bucket.
  */
 __global__ void sortBuckets(DATA_TYPE* __restrict__ data, const DATA_TYPE* __restrict__ buckets, unsigned int numBuckets, const unsigned int* __restrict__ bucketOffset) {
-    HIP_DYNAMIC_SHARED( DATA_TYPE, dataBuffer)
+    HIP_DYNAMIC_SHARED(DATA_TYPE, dataBuffer)
     for (unsigned int index = blockIdx.x; index < numBuckets; index += gridDim.x) {
         unsigned int startIndex = (index == 0 ? 0 : bucketOffset[index-1]);
         unsigned int endIndex = bucketOffset[index];
@@ -222,7 +222,7 @@ __global__ void sortBuckets(DATA_TYPE* __restrict__ data, const DATA_TYPE* __res
 
             // Perform a bitonic sort in local memory.
 
-            for (unsigned int k = 2; k <= blockDim.x; k *= 2) {
+            for (unsigned int k = 2; k <= lenghtNextPow2; k *= 2) {
                 for (unsigned int j = k/2; j > 0; j /= 2) {
                     int ixj = threadIdx.x^j;
                     if (ixj > threadIdx.x) {

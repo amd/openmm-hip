@@ -96,7 +96,10 @@ extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, 
         center.w = SQRT(tcenter);
         blockBoundingBox[index] = blockSize;
         blockCenter[index] = center;
-        sortedBlocks[index] = make_real2(blockSize.x+blockSize.y+blockSize.z, index);
+        // blockSize.x+blockSize.y+blockSize.z has a distibution that looks like a normal distribution.
+        // This causes HipSort's buckets to have very non-uniform sizes, so a few very long buckets are
+        // sorted in global memory. -1/max(x, y, z) or -1/(x+y+z) have a "faster" distribution.
+        sortedBlocks[index] = make_real2(-RECIP(max(max(blockSize.x, blockSize.y), blockSize.z)), index);
     }
     if (blockIdx.x == 0 && threadIdx.x == 0)
         rebuildNeighborList[0] = 0;
