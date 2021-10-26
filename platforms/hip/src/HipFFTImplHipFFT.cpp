@@ -107,8 +107,11 @@ int HipFFTImplHipFFT::findLegalDimension(int minimum) {
         // Attempt to factor the current value.
 
         int unfactored = minimum;
-        // HIP-TODO: rocFFT calculates incorrect results for some FFT sizes. It looks like factor == 7 is buggy.
-        // Remove this workaround when it's fixed.
+        // HIP-TODO: rocFFT calculates incorrect results for some FFT sizes.
+        // See platforms/hip/tests/TestHipFFTImplHipFFT.cpp
+        // It looks like factor == 7 is buggy on rocFFT from ROCm 4.3 (all tests pass on
+        // unofficial 4.5 version).
+        // Remove this workaround when it's fixed and check performance.
         for (int factor = 2; factor < 6/* 8 */; factor++) {
             while (unfactored > 1 && unfactored%factor == 0)
                 unfactored /= factor;

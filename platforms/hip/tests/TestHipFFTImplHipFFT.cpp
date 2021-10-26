@@ -54,6 +54,7 @@ static HipPlatform platform;
 
 template <class Real2>
 void testTransform(bool realToComplex, int xsize, int ysize, int zsize, double eps = 1) {
+    cout << "realToComplex: " << realToComplex << " xsize: " << xsize << " ysize: " << ysize << " zsize: " << zsize << endl;
     System system;
     system.addParticle(0.0);
     HipPlatform::PlatformData platformData(NULL, system, "", "true", platform.getPropertyDefaultValue("HipPrecision"), "false",
@@ -125,11 +126,11 @@ int main(int argc, char* argv[]) {
             testTransform<double2>(true, 25, 28, 25);
             testTransform<double2>(true, 25, 25, 28);
             testTransform<double2>(true, 21, 25, 27);
-            testTransform<double2>(true, 49, 98, 14);
+            testTransform<double2>(true, 49, 98, 14); // Fails on ROCm 4.3
             testTransform<double2>(true, 7, 21, 98);
             testTransform<double2>(true, 98, 21, 21);
-            testTransform<double2>(true, 18, 98, 6);
-            testTransform<double2>(true, 98, 98, 98, 1e+1);
+            testTransform<double2>(true, 18, 98, 6); // Fails on ROCm 4.3
+            testTransform<double2>(true, 98, 98, 98, 1e+1); // Fails on ROCm 4.3
         }
         else {
             testTransform<float2>(false, 28, 25, 30);
@@ -141,7 +142,7 @@ int main(int argc, char* argv[]) {
             testTransform<float2>(true, 7, 21, 98);
             testTransform<float2>(true, 98, 21, 21);
             testTransform<float2>(true, 18, 98, 6);
-            testTransform<float2>(true, 98, 98, 98, 1e+1);
+            testTransform<float2>(true, 98, 98, 98, 1e+1); // Fails on ROCm 4.3
         }
     }
     catch(const exception& e) {
