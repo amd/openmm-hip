@@ -82,7 +82,7 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
         const string& tempDir, const std::string& hostCompiler, bool allowRuntimeCompiler, HipPlatform::PlatformData& platformData,
         HipContext* originalContext) : ComputeContext(system), currentStream(0), platformData(platformData), contextIsValid(false), hasAssignedPosqCharges(false),
         hasCompilerKernel(false), isHipccAvailable(false), pinnedBuffer(NULL), integration(NULL), expression(NULL), bonded(NULL), nonbonded(NULL),
-        fftBackend(0) {
+        fftBackend(0), supportsHardwareFloatGlobalAtomicAdd(false) {
     // Determine what compiler to use.
 
     this->compiler = "\""+compiler+"\"";
@@ -178,11 +178,15 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     this->tileSize = simdWidth;
     this->sharedMemPerBlock = props.sharedMemPerBlock;
 
-    stringstream ss;
-    ss << string("gfx") << to_string(props.gcnArch);
-    gpuArchitecture = ss.str();
+    gpuArchitecture = props.gcnArchName;
     // HIP-TODO: find a good value here
     int numThreadBlocksPerComputeUnit = 6;
+
+    if (gpuArchitecture.find("gfx908") == 0 ||
+        gpuArchitecture.find("gfx90a") == 0) {
+        // MI100 and MI200 support 32 bit float atomic add
+        this->supportsHardwareFloatGlobalAtomicAdd = true;
+    }
 
     contextIsValid = true;
     ContextSelector selector(*this);
