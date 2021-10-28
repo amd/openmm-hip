@@ -644,7 +644,6 @@ hipFunction_t HipNonbondedUtilities::createInteractionKernel(const string& sourc
     if (includeEnergy)
         defines["INCLUDE_ENERGY"] = "1";
     defines["THREAD_BLOCK_SIZE"] = context.intToString(forceThreadBlockSize);
-    defines["OCCUPANCY"] = context.getUseDoublePrecision() ? "2" : "5";
     double maxCutoff = 0.0;
     for (int i = 0; i < 32; i++) {
         if ((groups&(1<<i)) != 0) {

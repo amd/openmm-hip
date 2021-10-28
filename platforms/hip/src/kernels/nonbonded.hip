@@ -60,7 +60,7 @@
  * [in]interactingAtoms - a list of interactions within a given tile
  *
  */
-extern "C" __launch_bounds__(THREAD_BLOCK_SIZE, OCCUPANCY) __global__ void computeNonbonded(
+extern "C" __launch_bounds__(THREAD_BLOCK_SIZE) __global__ void computeNonbonded(
         unsigned long long* __restrict__ forceBuffers, mixed* __restrict__ energyBuffer, const real4* __restrict__ posq, const tileflags* __restrict__ exclusions,
         const int2* __restrict__ exclusionTiles, unsigned int startTileIndex, unsigned long long numTileIndices
 #ifdef USE_CUTOFF
