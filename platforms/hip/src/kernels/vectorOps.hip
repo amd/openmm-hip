@@ -40,6 +40,196 @@ inline __device__ double4 make_double4(double a) {
     return make_double4(a, a, a, a);
 }
 
+// Negate a vector.
+
+inline __device__ int2 operator-(int2 a) {
+    return make_int2(-a.x, -a.y);
+}
+
+inline __device__ int3 operator-(int3 a) {
+    return make_int3(-a.x, -a.y, -a.z);
+}
+
+inline __device__ int4 operator-(int4 a) {
+    return make_int4(-a.x, -a.y, -a.z, -a.w);
+}
+
+inline __device__ float2 operator-(float2 a) {
+    return make_float2(-a.x, -a.y);
+}
+
+inline __device__ float3 operator-(float3 a) {
+    return make_float3(-a.x, -a.y, -a.z);
+}
+
+inline __device__ float4 operator-(float4 a) {
+    return make_float4(-a.x, -a.y, -a.z, -a.w);
+}
+
+inline __device__ double2 operator-(double2 a) {
+    return make_double2(-a.x, -a.y);
+}
+
+inline __device__ double3 operator-(double3 a) {
+    return make_double3(-a.x, -a.y, -a.z);
+}
+
+inline __device__ double4 operator-(double4 a) {
+    return make_double4(-a.x, -a.y, -a.z, -a.w);
+}
+
+// Add two vectors.
+
+inline __device__ int2 operator+(int2 a, int2 b) {
+    return make_int2(a.x+b.x, a.y+b.y);
+}
+
+inline __device__ int3 operator+(int3 a, int3 b) {
+    return make_int3(a.x+b.x, a.y+b.y, a.z+b.z);
+}
+
+inline __device__ int4 operator+(int4 a, int4 b) {
+    return make_int4(a.x+b.x, a.y+b.y, a.z+b.z, a.w+b.w);
+}
+
+inline __device__ float2 operator+(float2 a, float2 b) {
+    return make_float2(a.x+b.x, a.y+b.y);
+}
+
+inline __device__ float3 operator+(float3 a, float3 b) {
+    return make_float3(a.x+b.x, a.y+b.y, a.z+b.z);
+}
+
+inline __device__ float4 operator+(float4 a, float4 b) {
+    return make_float4(a.x+b.x, a.y+b.y, a.z+b.z, a.w+b.w);
+}
+
+inline __device__ double2 operator+(double2 a, double2 b) {
+    return make_double2(a.x+b.x, a.y+b.y);
+}
+
+inline __device__ double3 operator+(double3 a, double3 b) {
+    return make_double3(a.x+b.x, a.y+b.y, a.z+b.z);
+}
+
+inline __device__ double4 operator+(double4 a, double4 b) {
+    return make_double4(a.x+b.x, a.y+b.y, a.z+b.z, a.w+b.w);
+}
+
+// Subtract two vectors.
+
+inline __device__ int2 operator-(int2 a, int2 b) {
+    return make_int2(a.x-b.x, a.y-b.y);
+}
+
+inline __device__ int3 operator-(int3 a, int3 b) {
+    return make_int3(a.x-b.x, a.y-b.y, a.z-b.z);
+}
+
+inline __device__ int4 operator-(int4 a, int4 b) {
+    return make_int4(a.x-b.x, a.y-b.y, a.z-b.z, a.w-b.w);
+}
+
+inline __device__ float2 operator-(float2 a, float2 b) {
+    return make_float2(a.x-b.x, a.y-b.y);
+}
+
+inline __device__ float3 operator-(float3 a, float3 b) {
+    return make_float3(a.x-b.x, a.y-b.y, a.z-b.z);
+}
+
+inline __device__ float4 operator-(float4 a, float4 b) {
+    return make_float4(a.x-b.x, a.y-b.y, a.z-b.z, a.w-b.w);
+}
+
+inline __device__ double2 operator-(double2 a, double2 b) {
+    return make_double2(a.x-b.x, a.y-b.y);
+}
+
+inline __device__ double3 operator-(double3 a, double3 b) {
+    return make_double3(a.x-b.x, a.y-b.y, a.z-b.z);
+}
+
+inline __device__ double4 operator-(double4 a, double4 b) {
+    return make_double4(a.x-b.x, a.y-b.y, a.z-b.z, a.w-b.w);
+}
+
+// Multiply two vectors.
+
+inline __device__ int2 operator*(int2 a, int2 b) {
+    return make_int2(a.x*b.x, a.y*b.y);
+}
+
+inline __device__ int3 operator*(int3 a, int3 b) {
+    return make_int3(a.x*b.x, a.y*b.y, a.z*b.z);
+}
+
+inline __device__ int4 operator*(int4 a, int4 b) {
+    return make_int4(a.x*b.x, a.y*b.y, a.z*b.z, a.w*b.w);
+}
+
+inline __device__ float2 operator*(float2 a, float2 b) {
+    return make_float2(a.x*b.x, a.y*b.y);
+}
+
+inline __device__ float3 operator*(float3 a, float3 b) {
+    return make_float3(a.x*b.x, a.y*b.y, a.z*b.z);
+}
+
+inline __device__ float4 operator*(float4 a, float4 b) {
+    return make_float4(a.x*b.x, a.y*b.y, a.z*b.z, a.w*b.w);
+}
+
+inline __device__ double2 operator*(double2 a, double2 b) {
+    return make_double2(a.x*b.x, a.y*b.y);
+}
+
+inline __device__ double3 operator*(double3 a, double3 b) {
+    return make_double3(a.x*b.x, a.y*b.y, a.z*b.z);
+}
+
+inline __device__ double4 operator*(double4 a, double4 b) {
+    return make_double4(a.x*b.x, a.y*b.y, a.z*b.z, a.w*b.w);
+}
+
+// Divide two vectors.
+
+inline __device__ int2 operator/(int2 a, int2 b) {
+    return make_int2(a.x/b.x, a.y/b.y);
+}
+
+inline __device__ int3 operator/(int3 a, int3 b) {
+    return make_int3(a.x/b.x, a.y/b.y, a.z/b.z);
+}
+
+inline __device__ int4 operator/(int4 a, int4 b) {
+    return make_int4(a.x/b.x, a.y/b.y, a.z/b.z, a.w/b.w);
+}
+
+inline __device__ float2 operator/(float2 a, float2 b) {
+    return make_float2(a.x/b.x, a.y/b.y);
+}
+
+inline __device__ float3 operator/(float3 a, float3 b) {
+    return make_float3(a.x/b.x, a.y/b.y, a.z/b.z);
+}
+
+inline __device__ float4 operator/(float4 a, float4 b) {
+    return make_float4(a.x/b.x, a.y/b.y, a.z/b.z, a.w/b.w);
+}
+
+inline __device__ double2 operator/(double2 a, double2 b) {
+    return make_double2(a.x/b.x, a.y/b.y);
+}
+
+inline __device__ double3 operator/(double3 a, double3 b) {
+    return make_double3(a.x/b.x, a.y/b.y, a.z/b.z);
+}
+
+inline __device__ double4 operator/(double4 a, double4 b) {
+    return make_double4(a.x/b.x, a.y/b.y, a.z/b.z, a.w/b.w);
+}
+
 // Multiply a vector by a constant.
 
 inline __device__ int2 operator*(int2 a, int b) {

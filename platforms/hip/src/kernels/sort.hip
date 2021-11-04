@@ -11,7 +11,7 @@ extern "C" {
 __global__ void sortShortList(DATA_TYPE* __restrict__ data, unsigned int length) {
     // Load the data into local memory.
 
-    HIP_DYNAMIC_SHARED(DATA_TYPE, dataBuffer)
+    extern __shared__ DATA_TYPE dataBuffer[];
     for (int index = threadIdx.x; index < length; index += blockDim.x)
         dataBuffer[index] = data[index];
     __syncthreads();
@@ -52,7 +52,7 @@ __global__ void sortShortList(DATA_TYPE* __restrict__ data, unsigned int length)
  * work, but also parallelizes much better.
  */
 __global__ void sortShortList2(const DATA_TYPE* __restrict__ dataIn, DATA_TYPE* __restrict__ dataOut, unsigned int length) {
-    HIP_DYNAMIC_SHARED(KEY_TYPE, keyBuffer)
+    extern __shared__ KEY_TYPE keyBuffer[];
     int globalId = blockDim.x*blockIdx.x+threadIdx.x;
     DATA_TYPE value = dataIn[globalId < length ? globalId : 0];
     KEY_TYPE key = getValue(value);
@@ -95,7 +95,7 @@ inline __device__ void reduceMinMax(KEY_TYPE minimum, KEY_TYPE maximum, KEY_TYPE
  */
 __global__ void computeRange(const DATA_TYPE* __restrict__ data, unsigned int length, volatile KEY_TYPE* __restrict__ range,
         unsigned int numBuckets, unsigned int* __restrict__ bucketOffset, unsigned int* __restrict__ counters) {
-    HIP_DYNAMIC_SHARED(KEY_TYPE, minBuffer)
+    extern __shared__ KEY_TYPE minBuffer[];
     KEY_TYPE* maxBuffer = minBuffer+blockDim.x;
     KEY_TYPE minimum = MAX_KEY;
     KEY_TYPE maximum = MIN_KEY;
@@ -159,7 +159,7 @@ __global__ void assignElementsToBuckets(const DATA_TYPE* __restrict__ data, unsi
  * is executed as a single work group.
  */
 __global__ __launch_bounds__(1024) void computeBucketPositions(unsigned int numBuckets, unsigned int* __restrict__ bucketOffset, unsigned int* __restrict__ counters) {
-    HIP_DYNAMIC_SHARED(unsigned int, posBuffer)
+    extern __shared__ unsigned int posBuffer[];
     unsigned int globalOffset = 0;
     for (unsigned int startBucket = 0; startBucket < numBuckets; startBucket += blockDim.x) {
         // Load the bucket sizes into local memory.
@@ -205,7 +205,7 @@ __global__ void copyDataToBuckets(const DATA_TYPE* __restrict__ data, DATA_TYPE*
  * Sort the data in each bucket.
  */
 __global__ void sortBuckets(DATA_TYPE* __restrict__ data, const DATA_TYPE* __restrict__ buckets, unsigned int numBuckets, const unsigned int* __restrict__ bucketOffset) {
-    HIP_DYNAMIC_SHARED(DATA_TYPE, dataBuffer)
+    extern __shared__ DATA_TYPE dataBuffer[];
     for (unsigned int index = blockIdx.x; index < numBuckets; index += gridDim.x) {
         unsigned int startIndex = (index == 0 ? 0 : bucketOffset[index-1]);
         unsigned int endIndex = bucketOffset[index];

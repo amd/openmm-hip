@@ -125,14 +125,16 @@ HipPlatform::HipPlatform() {
     setPropertyDefaultValue(HipUseCpuPme(), "false");
     setPropertyDefaultValue(HipDisablePmeStream(), "false");
     setPropertyDefaultValue(HipDeterministicForces(), "false");
-    char* compiler = getenv("OPENMM_HIP_COMPILER");
-    char* rocm_path = getenv("ROCM_PATH");
     string hipcc;
-    if (rocm_path != NULL) {
-        hipcc = string(rocm_path) + "/bin/hipcc";
-    } else if (compiler != NULL) {
+    char* compiler = getenv("OPENMM_HIP_COMPILER");
+    char* rocmPath = getenv("ROCM_PATH");
+    if (compiler != NULL) {
         hipcc = compiler;
-    } else {
+    }
+    else if (rocmPath != NULL) {
+        hipcc = string(rocmPath) + "/bin/hipcc";
+    }
+    else {
         hipcc = "/opt/rocm/bin/hipcc";
     }
     setPropertyDefaultValue(HipCompiler(), hipcc);
@@ -198,8 +200,12 @@ void HipPlatform::contextCreated(ContextImpl& context, const map<string, string>
     char* threadsEnv = getenv("OPENMM_CPU_THREADS");
     if (threadsEnv != NULL)
         stringstream(threadsEnv) >> threads;
-    char* compilerEnv = getenv("OPENMM_HIP_COMPILER");
-    bool allowRuntimeCompiler = (compilerEnv == NULL && properties.find(HipCompiler()) == properties.end());
+    // Do not use hipRTC by default (it doesn't allow to use a workaround for DPP, see comments in
+    // HipContext::createModule and intrinsics.hip so performance may be a bit lower).
+    // HIP-TODO: Enable when the compiler issue is fixed.
+    // hipRTC on ROCm before 4.3 and earlier has issues so it's not supported
+    char* useHipRtcEnv = getenv("OPENMM_USE_HIPRTC");
+    bool allowRuntimeCompiler = (useHipRtcEnv != NULL && string(useHipRtcEnv) == "1");
     context.setPlatformData(new PlatformData(&context, context.getSystem(), devicePropValue, blockingPropValue, precisionPropValue, cpuPmePropValue, compilerPropValue, tempPropValue,
             hostCompilerPropValue, pmeStreamPropValue, deterministicForcesValue, threads, allowRuntimeCompiler, NULL));
 }
