@@ -363,6 +363,8 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     char* fftBackendVariable = getenv("OPENMM_FFT_BACKEND");
     if (fftBackendVariable != NULL)
         stringstream(fftBackendVariable) >> fftBackend;
+    else
+        fftBackend = 1; // Use hipFFT by default
 
     // Create utilities objects.
 
