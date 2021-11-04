@@ -914,8 +914,11 @@ static inline VkFFTResult appendExtensions(VkFFTSpecializationConstantsLayout* s
 	}
 #elif(VKFFT_BACKEND==1)
 #elif(VKFFT_BACKEND==2)
+	// ROCm 4.5 does not require this header
 	sc->tempLen = sprintf(sc->tempStr, "\
-#include <hip/hip_runtime.h>\n");
+#if !defined(__HIPCC_RTC__)\n\
+#include <hip/hip_runtime.h>\n\
+#endif\n");
 	res = VkAppendLine(sc);
 	if (res != VKFFT_SUCCESS) return res;
 #elif(VKFFT_BACKEND==3)
