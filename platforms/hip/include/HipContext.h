@@ -40,7 +40,6 @@
 
 
 #include <map>
-#include <stack>
 #include <string>
 #include <utility>
 #define __CL_ENABLE_EXCEPTIONS
@@ -605,7 +604,6 @@ private:
     double4 periodicBoxVecX, periodicBoxVecY, periodicBoxVecZ, periodicBoxSize, invPeriodicBoxSize;
     std::map<std::string, std::string> compilationDefines;
     hipDevice_t device;
-    std::stack<hipDevice_t> outerScopeDevices;
     hipStream_t currentStream;
     hipFunction_t clearBufferKernel;
     hipFunction_t clearTwoBuffersKernel;

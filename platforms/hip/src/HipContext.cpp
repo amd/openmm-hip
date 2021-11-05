@@ -57,6 +57,7 @@
 #include <iostream>
 #include <set>
 #include <sstream>
+#include <stack>
 #include <typeinfo>
 #include <sys/stat.h>
 #include <roctracer/roctracer_ext.h>
@@ -198,9 +199,15 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
         if (canAccess) {
             {
                 ContextSelector selector2(*platformData.contexts[0]);
-                CHECK_RESULT(hipDeviceEnablePeerAccess(getDevice(), 0));
+                hipError_t result = hipDeviceEnablePeerAccess(getDevice(), 0);
+                if (result != hipErrorPeerAccessAlreadyEnabled) {
+                    CHECK_RESULT(result);
+                }
             }
-            CHECK_RESULT(hipDeviceEnablePeerAccess(platformData.contexts[0]->getDevice(), 0));
+            hipError_t result = hipDeviceEnablePeerAccess(platformData.contexts[0]->getDevice(), 0);
+            if (result != hipErrorPeerAccessAlreadyEnabled) {
+                CHECK_RESULT(result);
+            }
         }
     }
     numAtoms = system.getNumParticles();
@@ -456,9 +463,11 @@ void HipContext::setAsCurrent() {
         hipSetDevice(device);
 }
 
+thread_local std::stack<hipDevice_t> outerScopeDevices;
+
 void HipContext::pushAsCurrent() {
     if (contextIsValid) {
-        // Emulate cuCtxPushCurrent's behavior
+        // Emulate cuCtxPushCurrent's behavior because hipCtxPushCurrent is deprecated
         hipDevice_t outerScopeDevice;
         hipGetDevice(&outerScopeDevice);
         outerScopeDevices.push(outerScopeDevice);
@@ -470,7 +479,7 @@ void HipContext::pushAsCurrent() {
 
 void HipContext::popAsCurrent() {
     if (contextIsValid) {
-        // Emulate cuCtxPopCurrent's behavior
+        // Emulate cuCtxPopCurrent's behavior because hipCtxPopCurrent is deprecated
         hipDevice_t outerScopeDevice = outerScopeDevices.top();
         outerScopeDevices.pop();
         if (outerScopeDevice != device) {
