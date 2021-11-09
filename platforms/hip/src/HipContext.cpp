@@ -401,8 +401,10 @@ HipContext::~HipContext() {
         delete bonded;
     if (nonbonded != NULL)
         delete nonbonded;
+    for (auto module : loadedModules) {
+        hipModuleUnload(module);
+    }
     popAsCurrent();
-    string errorMessage = "Error deleting Context";
     if (contextIsValid && !isLinkedContext) {
         roctracer_stop();
     }
@@ -587,8 +589,10 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     stringstream cacheFile;
     cacheFile << cacheDir << cacheHash.str() << '_' << gpuArchitecture << '_' << bits;
     hipModule_t module;
-    if (hipModuleLoad(&module, cacheFile.str().c_str()) == hipSuccess)
+    if (hipModuleLoad(&module, cacheFile.str().c_str()) == hipSuccess) {
+        loadedModules.push_back(module);
         return module;
+    }
 
     // Select names for the various temporary files.
 
@@ -632,6 +636,7 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
             // An error occurred.  Possibly we don't have permission to write to the temp directory.  Just try to load the module directly.
 
             CHECK_RESULT2(hipModuleLoadDataEx(&module, &ptx[0], 0, NULL, NULL), "Error loading HIP module");
+            loadedModules.push_back(module);
             return module;
         }
     }
@@ -673,6 +678,7 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
         }
         if (rename(outputFile.c_str(), cacheFile.str().c_str()) != 0 && !saveTemps)
             remove(outputFile.c_str());
+        loadedModules.push_back(module);
         return module;
     }
     catch (...) {

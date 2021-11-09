@@ -603,6 +603,7 @@ private:
     float4 periodicBoxVecXFloat, periodicBoxVecYFloat, periodicBoxVecZFloat, periodicBoxSizeFloat, invPeriodicBoxSizeFloat;
     double4 periodicBoxVecX, periodicBoxVecY, periodicBoxVecZ, periodicBoxSize, invPeriodicBoxSize;
     std::map<std::string, std::string> compilationDefines;
+    std::vector<hipModule_t> loadedModules;
     hipDevice_t device;
     hipStream_t currentStream;
     hipFunction_t clearBufferKernel;
