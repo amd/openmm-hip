@@ -53,7 +53,7 @@ T warpShuffle(const T& input, const int src_lane) {
 
 template<int Subwarp, class T>
 static __inline__ __device__
-typename std::enable_if<!(USE_DPP && Subwarp == warpSize), T>::type
+typename std::enable_if<!(USE_DPP && Subwarp == 64), T>::type
 warpRotateLeft(const T& input) {
   int i = ((threadIdx.x + 1) & (Subwarp - 1)) | (threadIdx.x & ~(Subwarp - 1));
   return warpShuffle(input, i);
@@ -61,8 +61,9 @@ warpRotateLeft(const T& input) {
 
 template<int Subwarp, class T>
 static __inline__ __device__
-typename std::enable_if<(USE_DPP && Subwarp == warpSize), T>::type
+typename std::enable_if<(USE_DPP && Subwarp == 64), T>::type
 warpRotateLeft(const T& input) {
     // Wavefront rotate left by 1 thread
+    // RDNA does not support it, shuffle-based implementation is used instead
     return warpMoveDpp<T, 0x134>(input);
 }
