@@ -97,9 +97,11 @@ private:
 class HipParallelCalcForcesAndEnergyKernel::FinishComputationTask : public HipContext::WorkTask {
 public:
     FinishComputationTask(ContextImpl& context, HipContext& cu, HipCalcForcesAndEnergyKernel& kernel,
-            bool includeForce, bool includeEnergy, int groups, double& energy, long long& completionTime, long long* pinnedMemory, HipArray& contextForces, bool& valid, int2& interactionCount) :
+            bool includeForce, bool includeEnergy, int groups, double& energy, long long& completionTime, long long* pinnedMemory, HipArray& contextForces,
+            bool& valid, int2& interactionCount, hipStream_t stream, hipEvent_t event, hipEvent_t localEvent) :
             context(context), cu(cu), kernel(kernel), includeForce(includeForce), includeEnergy(includeEnergy), groups(groups), energy(energy),
-            completionTime(completionTime), pinnedMemory(pinnedMemory), contextForces(contextForces), valid(valid), interactionCount(interactionCount) {
+            completionTime(completionTime), pinnedMemory(pinnedMemory), contextForces(contextForces), valid(valid), interactionCount(interactionCount),
+            stream(stream), event(event), localEvent(localEvent) {
     }
     void execute() {
         // Execute the kernel, then download forces.
@@ -114,13 +116,16 @@ public:
         }
         if (includeForce) {
             if (cu.getContextIndex() > 0) {
+                hipEventRecord(localEvent, cu.getCurrentStream());
+                hipStreamWaitEvent(stream, localEvent, 0);
                 int numAtoms = cu.getPaddedNumAtoms();
                 if (cu.getPlatformData().peerAccessSupported) {
                     int numBytes = numAtoms*3*sizeof(long long);
                     int offset = (cu.getContextIndex()-1)*numBytes;
                     HipContext& context0 = *cu.getPlatformData().contexts[0];
-                    CHECK_RESULT(hipMemcpy(static_cast<char*>(contextForces.getDevicePointer())+offset,
-                                           cu.getForce().getDevicePointer(), numBytes, hipMemcpyDeviceToDevice), "Error copying forces");
+                    CHECK_RESULT(hipMemcpyAsync(static_cast<char*>(contextForces.getDevicePointer())+offset,
+                                           cu.getForce().getDevicePointer(), numBytes, hipMemcpyDeviceToDevice, stream), "Error copying forces");
+                    hipEventRecord(event, stream);
                 }
                 else
                     cu.getForce().download(&pinnedMemory[(cu.getContextIndex()-1)*numAtoms*3]);
@@ -144,6 +149,9 @@ private:
     HipArray& contextForces;
     bool& valid;
     int2& interactionCount;
+    hipStream_t stream;
+    hipEvent_t event;
+    hipEvent_t localEvent;
 };
 
 HipParallelCalcForcesAndEnergyKernel::HipParallelCalcForcesAndEnergyKernel(string name, const Platform& platform, HipPlatform::PlatformData& data) :
@@ -160,7 +168,12 @@ HipParallelCalcForcesAndEnergyKernel::~HipParallelCalcForcesAndEnergyKernel() {
     if (pinnedForceBuffer != NULL)
         hipHostFree(pinnedForceBuffer);
     hipEventDestroy(event);
-    hipStreamDestroy(peerCopyStream);
+    for (int i = 0; i < peerCopyEvent.size(); i++)
+        hipEventDestroy(peerCopyEvent[i]);
+    for (int i = 0; i < peerCopyEventLocal.size(); i++)
+        hipEventDestroy(peerCopyEventLocal[i]);
+    for (int i = 0; i < peerCopyStream.size(); i++)
+        hipStreamDestroy(peerCopyStream[i]);
     if (interactionCounts != NULL)
         hipHostFree(interactionCounts);
 }
@@ -176,7 +189,18 @@ void HipParallelCalcForcesAndEnergyKernel::initialize(const System& system) {
     for (int i = 0; i < numContexts; i++)
         contextNonbondedFractions[i] = 1/(double) numContexts;
     CHECK_RESULT(hipEventCreateWithFlags(&event, 0), "Error creating event");
-    CHECK_RESULT(hipStreamCreateWithFlags(&peerCopyStream, hipStreamNonBlocking), "Error creating stream");
+    peerCopyEvent.resize(numContexts);
+    peerCopyEventLocal.resize(numContexts);
+    peerCopyStream.resize(numContexts);
+    for (int i = 0; i < numContexts; i++) {
+        CHECK_RESULT(hipEventCreateWithFlags(&peerCopyEvent[i], 0), "Error creating event");
+        CHECK_RESULT(hipStreamCreateWithFlags(&peerCopyStream[i], hipStreamNonBlocking), "Error creating stream");
+    }
+    for (int i = 0; i < numContexts; i++) {
+        HipContext& cuLocal = *data.contexts[i];
+        ContextSelector selectorLocal(cuLocal);
+        CHECK_RESULT(hipEventCreateWithFlags(&peerCopyEventLocal[i], 0), "Error creating event");
+    }
     CHECK_RESULT(hipHostMalloc((void**) &interactionCounts, numContexts*sizeof(int2), 0), "Error creating interaction counts buffer");
 }
 
@@ -198,19 +222,21 @@ void HipParallelCalcForcesAndEnergyKernel::beginComputation(ContextImpl& context
     else {
         int numBytes = cu.getPosq().getSize()*cu.getPosq().getElementSize();
         hipEventRecord(event, cu.getCurrentStream());
-        hipStreamWaitEvent(peerCopyStream, event, 0);
-        for (int i = 1; i < (int) data.contexts.size(); i++)
+        for (int i = 1; i < (int) data.contexts.size(); i++) {
+            hipStreamWaitEvent(peerCopyStream[i], event, 0);
             CHECK_RESULT(hipMemcpyAsync(
                 data.contexts[i]->getPosq().getDevicePointer(),
                 cu.getPosq().getDevicePointer(), numBytes,
-                hipMemcpyDeviceToDevice, peerCopyStream), "Error copying positions");
-        hipEventRecord(event, peerCopyStream);
+                hipMemcpyDeviceToDevice, peerCopyStream[i]), "Error copying positions");
+            hipEventRecord(peerCopyEvent[i], peerCopyStream[i]);
+        }
     }
     for (int i = 0; i < (int) data.contexts.size(); i++) {
         data.contextEnergy[i] = 0.0;
         HipContext& cu = *data.contexts[i];
         ComputeContext::WorkThread& thread = cu.getWorkThread();
-        thread.addTask(new BeginComputationTask(context, cu, getKernel(i), includeForce, includeEnergy, groups, pinnedPositionBuffer, event, interactionCounts[i]));
+        hipEvent_t waitEvent = (cu.getPlatformData().peerAccessSupported ? peerCopyEvent[i] : event);
+        thread.addTask(new BeginComputationTask(context, cu, getKernel(i), includeForce, includeEnergy, groups, pinnedPositionBuffer, waitEvent, interactionCounts[i]));
     }
 }
 
@@ -218,17 +244,21 @@ double HipParallelCalcForcesAndEnergyKernel::finishComputation(ContextImpl& cont
     for (int i = 0; i < (int) data.contexts.size(); i++) {
         HipContext& cu = *data.contexts[i];
         ComputeContext::WorkThread& thread = cu.getWorkThread();
-        thread.addTask(new FinishComputationTask(context, cu, getKernel(i), includeForce, includeEnergy, groups, data.contextEnergy[i], completionTimes[i], pinnedForceBuffer, contextForces, valid, interactionCounts[i]));
+        thread.addTask(new FinishComputationTask(context, cu, getKernel(i), includeForce, includeEnergy, groups, data.contextEnergy[i], completionTimes[i],
+                pinnedForceBuffer, contextForces, valid, interactionCounts[i], peerCopyStream[i], peerCopyEvent[i], peerCopyEventLocal[i]));
     }
     data.syncContexts();
+    HipContext& cu = *data.contexts[0];
+    ContextSelector selector(cu);
+    if (cu.getPlatformData().peerAccessSupported)
+        for (int i = 1; i < data.contexts.size(); i++)
+            hipStreamWaitEvent(cu.getCurrentStream(), peerCopyEvent[i], 0);
     double energy = 0.0;
     for (int i = 0; i < (int) data.contextEnergy.size(); i++)
         energy += data.contextEnergy[i];
     if (includeForce && valid) {
         // Sum the forces from all devices.
 
-        HipContext& cu = *data.contexts[0];
-        ContextSelector selector(cu);
         if (!cu.getPlatformData().peerAccessSupported)
             contextForces.upload(pinnedForceBuffer, false);
         int bufferSize = 3*cu.getPaddedNumAtoms();

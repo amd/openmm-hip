@@ -6,12 +6,9 @@
  * Biological Structures at Stanford, funded under the NIH Roadmap for        *
  * Medical Research, grant U54 GM072970. See https://simtk.org.               *
  *                                                                            *
- * Portions copyright (c) 2015-2016 Stanford University and the Authors.      *
- * Portions copyright (C) 2020 Advanced Micro Devices, Inc. All Rights        *
- * Reserved.                                                                  *
- * Authors: Peter Eastman, Nicholas Curtis                                    *
+ * Portions copyright (c) 2021 Stanford University and the Authors.           *
+ * Authors: Peter Eastman                                                     *
  * Contributors:                                                              *
- * Portions Copyright© 2020 Advanced Micro Devices, Inc. All rights reserved  *
  *                                                                            *
  * Permission is hereby granted, free of charge, to any person obtaining a    *
  * copy of this software and associated documentation files (the "Software"), *
@@ -32,17 +29,8 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.                                     *
  * -------------------------------------------------------------------------- */
 
-#ifdef WIN32
-  #define _USE_MATH_DEFINES // Needed to get M_PI
-#endif
-#include "HipPlatform.h"
-#include <string>
+#include "HipTests.h"
+#include "TestMonteCarloFlexibleBarostat.h"
 
-OpenMM::HipPlatform platform;
-
-void initializeTests(int argc, char* argv[]) {
-    if (argc > 1)
-        platform.setPropertyDefaultValue("Precision", std::string(argv[1]));
-    if (argc > 2)
-        platform.setPropertyDefaultValue("DeviceIndex", std::string(argv[2]));
+void runPlatformTests() {
 }
