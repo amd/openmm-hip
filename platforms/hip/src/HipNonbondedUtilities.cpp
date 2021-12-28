@@ -74,8 +74,19 @@ HipNonbondedUtilities::HipNonbondedUtilities(HipContext& context) : context(cont
     CHECK_RESULT(hipDeviceGetAttribute(&multiprocessors, hipDeviceAttributeMultiprocessorCount, context.getDevice()));
     CHECK_RESULT(hipEventCreateWithFlags(&downloadCountEvent, 0));
     CHECK_RESULT(hipHostMalloc((void**) &pinnedCountBuffer, 2*sizeof(int), hipHostMallocPortable));
-    numForceThreadBlocks = 4*5*multiprocessors;
-    forceThreadBlockSize = 64;
+    if (context.getSIMDWidth() > 32) {
+        numForceThreadBlocks = 4*5*multiprocessors;
+        forceThreadBlockSize = 64;
+    }
+    else {
+        // Launch more warps on RDNA:
+        // 1. For RDNA GPUs hipDeviceAttributeMultiprocessorCount means WGP (work-group processors,
+        //    two compute units), not CUs.
+        // 2. Most systems benefit from higher occupancy.
+        numForceThreadBlocks = 4*5*multiprocessors;
+        forceThreadBlockSize = 256;
+    }
+    findInteractingBlocksThreadBlockSize = context.getSIMDWidth();
     setKernelSource(HipKernelSources::nonbonded);
 }
 
@@ -414,7 +425,7 @@ void HipNonbondedUtilities::prepareInteractions(int forceGroups) {
     context.executeKernelFlat(kernels.findBlockBoundsKernel, &findBlockBoundsArgs[0], context.getPaddedNumAtoms(), context.getTileSize());
     blockSorter->sort(sortedBlocks);
     context.executeKernelFlat(kernels.sortBoxDataKernel, &sortBoxDataArgs[0], context.getNumAtoms(), 64);
-    context.executeKernelFlat(kernels.findInteractingBlocksKernel, &findInteractingBlocksArgs[0], context.getPaddedNumAtoms() * numTilesInBatch, 64);
+    context.executeKernelFlat(kernels.findInteractingBlocksKernel, &findInteractingBlocksArgs[0], context.getPaddedNumAtoms() * numTilesInBatch, findInteractingBlocksThreadBlockSize);
     forceRebuildNeighborList = false;
     lastCutoff = kernels.cutoffDistance;
     interactionCount.download(pinnedCountBuffer, false);
@@ -517,8 +528,9 @@ void HipNonbondedUtilities::createKernelsForGroups(int groups) {
             defines["TRICLINIC"] = "1";
         defines["MAX_EXCLUSIONS"] = context.intToString(maxExclusions);
         // HIP-TODO: This may require tuning
-        defines["MAX_BITS_FOR_PAIRS"] = (canUsePairList ? "8" : "0");
+        defines["MAX_BITS_FOR_PAIRS"] = (canUsePairList ? (context.getTileSize() > 32 ? "8" : "4") : "0");
         defines["NUM_TILES_IN_BATCH"] = context.intToString(numTilesInBatch);
+        defines["GROUP_SIZE"] = context.intToString(findInteractingBlocksThreadBlockSize);
         hipModule_t interactingBlocksProgram = context.createModule(HipKernelSources::vectorOps+HipKernelSources::findInteractingBlocks, defines);
         kernels.findBlockBoundsKernel = context.getKernel(interactingBlocksProgram, "findBlockBounds");
         kernels.sortBoxDataKernel = context.getKernel(interactingBlocksProgram, "sortBoxData");

@@ -217,7 +217,9 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     CHECK_RESULT(hipDeviceGetAttribute(&multiprocessors, hipDeviceAttributeMultiprocessorCount, device));
     numThreadBlocks = numThreadBlocksPerComputeUnit*multiprocessors;
 
-    compilationDefines["USE_HIP"] = "1"; 
+    compilationDefines["USE_HIP"] = "1";
+    if (simdWidth == 32)
+        compilationDefines["AMD_RDNA"] = "";
     compilationDefines["ENABLE_SHUFFLE"] = "1";
     compilationDefines["LOAD_TEMP_ATOM"] = "data = LDATA(tbx+j);";
     compilationDefines["BROADCAST_WARP_ATOM"] = "LDATA(tbx+j) = warpShuffle(data, j);";

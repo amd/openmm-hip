@@ -1,4 +1,3 @@
-#define GROUP_SIZE 64
 #define BUFFER_SIZE 256
 
 // type compat.

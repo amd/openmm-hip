@@ -1188,7 +1188,7 @@ double HipCalcNonbondedForceKernel::execute(ContextImpl& context, bool includeFo
             void* gridIndexArgs[] = {&cu.getPosq().getDevicePointer(), &pmeAtomGridIndex.getDevicePointer(), cu.getPeriodicBoxSizePointer(),
                     cu.getInvPeriodicBoxSizePointer(), cu.getPeriodicBoxVecXPointer(), cu.getPeriodicBoxVecYPointer(), cu.getPeriodicBoxVecZPointer(),
                     recipBoxVectorPointer[0], recipBoxVectorPointer[1], recipBoxVectorPointer[2]};
-            cu.executeKernelFlat(pmeGridIndexKernel, gridIndexArgs, cu.getNumAtoms(), 64);
+            cu.executeKernelFlat(pmeGridIndexKernel, gridIndexArgs, cu.getNumAtoms());
 
             sort->sort(pmeAtomGridIndex);
 
@@ -1196,10 +1196,10 @@ double HipCalcNonbondedForceKernel::execute(ContextImpl& context, bool includeFo
                     cu.getInvPeriodicBoxSizePointer(), cu.getPeriodicBoxVecXPointer(), cu.getPeriodicBoxVecYPointer(), cu.getPeriodicBoxVecZPointer(),
                     recipBoxVectorPointer[0], recipBoxVectorPointer[1], recipBoxVectorPointer[2], &pmeAtomGridIndex.getDevicePointer(),
                     &charges.getDevicePointer()};
-            cu.executeKernelFlat(pmeSpreadChargeKernel, spreadArgs, cu.getNumAtoms(), 64);
+            cu.executeKernelFlat(pmeSpreadChargeKernel, spreadArgs, cu.getNumAtoms(), 128);
 
             void* finishSpreadArgs[] = {&pmeGrid2.getDevicePointer(), &pmeGrid1.getDevicePointer()};
-            cu.executeKernelFlat(pmeFinishSpreadChargeKernel, finishSpreadArgs, gridSizeX*gridSizeY*gridSizeZ, 64);
+            cu.executeKernelFlat(pmeFinishSpreadChargeKernel, finishSpreadArgs, gridSizeX*gridSizeY*gridSizeZ, 256);
 
             fft->execFFT(true);
 
@@ -1229,7 +1229,7 @@ double HipCalcNonbondedForceKernel::execute(ContextImpl& context, bool includeFo
                 void* gridIndexArgs[] = {&cu.getPosq().getDevicePointer(), &pmeAtomGridIndex.getDevicePointer(), cu.getPeriodicBoxSizePointer(),
                         cu.getInvPeriodicBoxSizePointer(), cu.getPeriodicBoxVecXPointer(), cu.getPeriodicBoxVecYPointer(), cu.getPeriodicBoxVecZPointer(),
                         recipBoxVectorPointer[0], recipBoxVectorPointer[1], recipBoxVectorPointer[2]};
-                cu.executeKernelFlat(pmeDispersionGridIndexKernel, gridIndexArgs, cu.getNumAtoms(), 64);
+                cu.executeKernelFlat(pmeDispersionGridIndexKernel, gridIndexArgs, cu.getNumAtoms());
 
                 sort->sort(pmeAtomGridIndex);
                 cu.clearBuffer(pmeEnergyBuffer);
@@ -1240,10 +1240,10 @@ double HipCalcNonbondedForceKernel::execute(ContextImpl& context, bool includeFo
                     cu.getInvPeriodicBoxSizePointer(), cu.getPeriodicBoxVecXPointer(), cu.getPeriodicBoxVecYPointer(), cu.getPeriodicBoxVecZPointer(),
                     recipBoxVectorPointer[0], recipBoxVectorPointer[1], recipBoxVectorPointer[2], &pmeAtomGridIndex.getDevicePointer(),
                     &sigmaEpsilon.getDevicePointer()};
-            cu.executeKernelFlat(pmeDispersionSpreadChargeKernel, spreadArgs, cu.getNumAtoms(), 64);
+            cu.executeKernelFlat(pmeDispersionSpreadChargeKernel, spreadArgs, cu.getNumAtoms(), 128);
 
             void* finishSpreadArgs[] = {&pmeGrid2.getDevicePointer(), &pmeGrid1.getDevicePointer()};
-            cu.executeKernelFlat(pmeDispersionFinishSpreadChargeKernel, finishSpreadArgs, dispersionGridSizeX*dispersionGridSizeY*dispersionGridSizeZ, 64);
+            cu.executeKernelFlat(pmeDispersionFinishSpreadChargeKernel, finishSpreadArgs, dispersionGridSizeX*dispersionGridSizeY*dispersionGridSizeZ, 256);
 
             dispersionFft->execFFT(true);
 
