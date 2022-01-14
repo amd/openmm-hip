@@ -8,8 +8,8 @@ ENABLE_TESTING()
 INCLUDE_DIRECTORIES(${MMHIP_INCLUDE_DIRS})
 LINK_DIRECTORIES(${MMHIP_LINK_DIRS})
 
-INCLUDE_DIRECTORIES(${OPENMM_DIR}/plugins/rpmd/tests)
-INCLUDE_DIRECTORIES(${OPENMM_DIR}/platforms/hip/tests)
+INCLUDE_DIRECTORIES(${OPENMM_SOURCE_DIR}/plugins/rpmd/tests)
+INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/platforms/hip/tests)
 
 # Automatically create tests using files named "Test*.cpp"
 FILE(GLOB TEST_PROGS "*Test*.cpp")

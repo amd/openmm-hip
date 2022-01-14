@@ -17,7 +17,7 @@ endif(BUILD_TESTING AND OPENMM_BUILD_HIP_TESTS)
 
 # The source is organized into subdirectories, but we handle them all from
 # this CMakeLists file rather than letting CMake visit them as SUBDIRS.
-SET(OPENMM_SOURCE_SUBDIRS . ../common)
+SET(OPENMM_SOURCE_SUBDIRS ${CMAKE_CURRENT_SOURCE_DIR} ${OPENMM_SOURCE_DIR}/platforms/common)
 
 
 # Collect up information about the version of the OpenMM library we're building
@@ -35,8 +35,8 @@ SET(API_INCLUDE_DIRS) # start empty
 FOREACH(subdir ${OPENMM_SOURCE_SUBDIRS})
     # append
     SET(API_INCLUDE_DIRS ${API_INCLUDE_DIRS}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/include
-                         ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/include/internal)
+                         ${subdir}/include
+                         ${subdir}/include/internal)
 ENDFOREACH(subdir)
 
 # We'll need both *relative* path names, starting with their API_INCLUDE_DIRS,
@@ -59,29 +59,41 @@ SET(SOURCE_FILES) # empty
 SET(SOURCE_INCLUDE_FILES)
 
 FOREACH(subdir ${OPENMM_SOURCE_SUBDIRS})
-    FILE(GLOB_RECURSE src_files  ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/src/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/src/*.c)
-    FILE(GLOB incl_files ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/src/*.h)
+    FILE(GLOB_RECURSE src_files  ${subdir}/src/*.cpp ${subdir}/src/*.c)
+    FILE(GLOB incl_files ${subdir}/src/*.h)
     SET(SOURCE_FILES         ${SOURCE_FILES}         ${src_files})   #append
     IF(MSVC)
-         FILE(GLOB_RECURSE kernel_files ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/src/kernels/*.hip)
+         FILE(GLOB_RECURSE kernel_files ${subdir}/src/kernels/*.hip)
          SET(SOURCE_FILES ${SOURCE_FILES} ${kernel_files})
     ENDIF(MSVC)
     SET(SOURCE_INCLUDE_FILES ${SOURCE_INCLUDE_FILES} ${incl_files})
-    INCLUDE_DIRECTORIES(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/include)
+    INCLUDE_DIRECTORIES(BEFORE ${subdir}/include)
 ENDFOREACH(subdir)
 
 INCLUDE_DIRECTORIES(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 # Set variables needed for encoding kernel sources into a C++ class
 
+SET(KERNEL_SOURCE_DIR ${OPENMM_SOURCE_DIR}/platforms/common/src)
+SET(KERNEL_SOURCE_CLASS CommonKernelSources)
+SET(KERNELS_CPP ${CMAKE_CURRENT_BINARY_DIR}/src/${KERNEL_SOURCE_CLASS}.cpp)
+SET(KERNELS_H ${CMAKE_CURRENT_BINARY_DIR}/src/${KERNEL_SOURCE_CLASS}.h)
+FILE(GLOB COMMON_KERNELS ${KERNEL_SOURCE_DIR}/kernels/*.cc)
+ADD_CUSTOM_COMMAND(OUTPUT ${KERNELS_CPP} ${KERNELS_H}
+    COMMAND ${CMAKE_COMMAND}
+    ARGS -D KERNEL_SOURCE_DIR=${KERNEL_SOURCE_DIR} -D KERNELS_CPP=${KERNELS_CPP} -D KERNELS_H=${KERNELS_H} -D KERNEL_SOURCE_CLASS=${KERNEL_SOURCE_CLASS} -D KERNEL_FILE_EXTENSION=cc -P ${OPENMM_SOURCE_DIR}/cmake_modules/EncodeKernelFiles.cmake
+    DEPENDS ${COMMON_KERNELS}
+)
+SET_SOURCE_FILES_PROPERTIES(${KERNELS_CPP} ${KERNELS_H} PROPERTIES GENERATED TRUE)
+ADD_CUSTOM_TARGET(CommonKernels DEPENDS ${KERNELS_CPP} ${KERNELS_H})
+
 SET(KERNEL_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/src)
 SET(KERNEL_SOURCE_CLASS HipKernelSources)
 SET(KERNELS_CPP ${CMAKE_CURRENT_BINARY_DIR}/src/${KERNEL_SOURCE_CLASS}.cpp)
 SET(KERNELS_H ${CMAKE_CURRENT_BINARY_DIR}/src/${KERNEL_SOURCE_CLASS}.h)
-SET(COMMON_KERNELS_CPP ${CMAKE_CURRENT_BINARY_DIR}/../common/src/CommonKernelSources.cpp)
+SET(COMMON_KERNELS_CPP ${CMAKE_CURRENT_BINARY_DIR}/src/CommonKernelSources.cpp)
 SET(SOURCE_FILES ${SOURCE_FILES} ${KERNELS_CPP} ${KERNELS_H} ${COMMON_KERNELS_CPP})
 INCLUDE_DIRECTORIES(BEFORE ${CMAKE_CURRENT_BINARY_DIR}/src)
-INCLUDE_DIRECTORIES(BEFORE ${CMAKE_CURRENT_BINARY_DIR}/../common/src)
 
 # Install headers
 

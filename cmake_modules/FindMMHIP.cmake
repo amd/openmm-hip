@@ -35,30 +35,29 @@
 #       CMAKE_MODULE_PATH    - to point to hipfft / HIP cmake modules
 
 
-FIND_PACKAGE(HIP CONFIG QUIET)
-IF(HIP_FOUND)
-    IF(${HIP_COMPILER} STREQUAL "clang")
-        MESSAGE(STATUS "Using HIP-Clang compiler")
-    ELSE()
-        MESSAGE(FATAL_ERROR "HIP compiler ${HIP_COMPILER} not recognized!")
-    ENDIF()
-    LIST(APPEND CMAKE_MODULE_PATH "${HIP_ROOT_DIR}/lib/cmake/hip")
-    LIST(APPEND CMAKE_MODULE_PATH "${HIP_ROOT_DIR}/../hipfft/lib/cmake/hipfft")
+FIND_PACKAGE(HIP CONFIG)
 
-    FIND_PACKAGE(HIP REQUIRED)
-    FIND_PACKAGE(ROCFFT REQUIRED)
-    EXECUTE_PROCESS(COMMAND ${HIP_HIPCONFIG_EXECUTABLE} -C OUTPUT_VARIABLE HIPCXXFLAGS)
-    EXECUTE_PROCESS(COMMAND ${HIP_HIPCONFIG_EXECUTABLE} -p OUTPUT_VARIABLE HIP_ROOT_PATH)
+IF(${HIP_COMPILER} STREQUAL "clang")
+    MESSAGE(STATUS "Using HIP-Clang compiler")
+ELSE()
+    MESSAGE(FATAL_ERROR "HIP compiler ${HIP_COMPILER} not recognized!")
+ENDIF()
+LIST(APPEND CMAKE_MODULE_PATH "${HIP_ROOT_DIR}/lib/cmake/hip")
+LIST(APPEND CMAKE_MODULE_PATH "${HIP_ROOT_DIR}/../hipfft/lib/cmake/hipfft")
 
-    # set HIP include dirs
-    # this includes HIP, hipFFT, and the roctracer includes
-    SET(MMHIP_INCLUDE_DIRS ${HIP_ROOT_PATH}/../hipfft/include ${HIP_INCLUDE_DIRS} ${HIP_ROOT_PATH}/../hsa/include/hsa ${HIP_ROOT_PATH}/../roctracer/include)
-    # set HIP link directories
-    # this includes HIP, hipFFT, and the roctracer
-    SET(MMHIP_LINK_DIRS ${HIP_ROOT_PATH}/lib ${HIP_ROOT_PATH}/../hipfft/lib ${HIP_ROOT_PATH}/../hsa/lib ${HIP_ROOT_PATH}/../roctracer/lib)
-    # set HIP libraries
-    # this includes HIP, hipFFT, and the roctracer
-    SET(MMHIP_LIBS amdhip64 hipfft roctracer64)
-ENDIF(HIP_FOUND)
+FIND_PACKAGE(HIP REQUIRED)
+FIND_PACKAGE(ROCFFT REQUIRED)
+EXECUTE_PROCESS(COMMAND ${HIP_HIPCONFIG_EXECUTABLE} -C OUTPUT_VARIABLE HIPCXXFLAGS)
+EXECUTE_PROCESS(COMMAND ${HIP_HIPCONFIG_EXECUTABLE} -p OUTPUT_VARIABLE HIP_ROOT_PATH)
+
+# set HIP include dirs
+# this includes HIP, hipFFT, and the roctracer includes
+SET(MMHIP_INCLUDE_DIRS ${HIP_ROOT_PATH}/../hipfft/include ${HIP_INCLUDE_DIRS} ${HIP_ROOT_PATH}/../hsa/include/hsa ${HIP_ROOT_PATH}/../roctracer/include)
+# set HIP link directories
+# this includes HIP, hipFFT, and the roctracer
+SET(MMHIP_LINK_DIRS ${HIP_ROOT_PATH}/lib ${HIP_ROOT_PATH}/../hipfft/lib ${HIP_ROOT_PATH}/../hsa/lib ${HIP_ROOT_PATH}/../roctracer/lib)
+# set HIP libraries
+# this includes HIP, hipFFT, and the roctracer
+SET(MMHIP_LIBS amdhip64 hipfft roctracer64)
 
 find_package_handle_standard_args(MMHIP DEFAULT_MSG HIP_ROOT_PATH)

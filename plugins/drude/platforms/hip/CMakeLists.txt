@@ -10,9 +10,12 @@
 #   libOpenMMDrudeHIP.so
 #----------------------------------------------------
 
+SET(OPENMM_DRUDE_LIBRARY_NAME OpenMMDrude)
+SET(SHARED_DRUDE_TARGET ${OPENMM_DRUDE_LIBRARY_NAME})
+
 # The source is organized into subdirectories, but we handle them all from
 # this CMakeLists file rather than letting CMake visit them as SUBDIRS.
-SET(OPENMM_SOURCE_SUBDIRS . ../common)
+SET(OPENMM_SOURCE_SUBDIRS ${CMAKE_CURRENT_SOURCE_DIR} ${OPENMM_SOURCE_DIR}/plugins/drude/platforms/common)
 
 
 # Collect up information about the version of the OpenMM library we're building
@@ -28,8 +31,8 @@ SET(API_INCLUDE_DIRS) # start empty
 FOREACH(subdir ${OPENMM_SOURCE_SUBDIRS})
     # append
     SET(API_INCLUDE_DIRS ${API_INCLUDE_DIRS}
-                         ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/include
-                         ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/include/internal)
+                         ${subdir}/include
+                         ${subdir}/include/internal)
 ENDFOREACH(subdir)
 
 # We'll need both *relative* path names, starting with their API_INCLUDE_DIRS,
@@ -47,37 +50,47 @@ FOREACH(dir ${API_INCLUDE_DIRS})
     ENDFOREACH(pathname)
 ENDFOREACH(dir)
 
+# Encode the common kernel sources into a C++ class.
+
+SET(KERNEL_SOURCE_DIR ${OPENMM_SOURCE_DIR}/plugins/drude/platforms/common/src)
+SET(KERNEL_SOURCE_CLASS CommonDrudeKernelSources)
+SET(KERNELS_CPP ${CMAKE_CURRENT_BINARY_DIR}/src/${KERNEL_SOURCE_CLASS}.cpp)
+SET(KERNELS_H ${CMAKE_CURRENT_BINARY_DIR}/src/${KERNEL_SOURCE_CLASS}.h)
+FILE(GLOB COMMON_KERNELS ${KERNEL_SOURCE_DIR}/kernels/*.cc)
+ADD_CUSTOM_COMMAND(OUTPUT ${KERNELS_CPP} ${KERNELS_H}
+    COMMAND ${CMAKE_COMMAND}
+    ARGS -D KERNEL_SOURCE_DIR=${KERNEL_SOURCE_DIR} -D KERNELS_CPP=${KERNELS_CPP} -D KERNELS_H=${KERNELS_H} -D KERNEL_SOURCE_CLASS=${KERNEL_SOURCE_CLASS} -D KERNEL_FILE_EXTENSION=cc -P ${OPENMM_SOURCE_DIR}/cmake_modules/EncodeKernelFiles.cmake
+    DEPENDS ${COMMON_KERNELS}
+)
+SET_SOURCE_FILES_PROPERTIES(${KERNELS_CPP} ${KERNELS_H} PROPERTIES GENERATED TRUE)
+ADD_CUSTOM_TARGET(DrudeCommonKernels DEPENDS ${KERNELS_CPP} ${KERNELS_H})
+
 # collect up source files
 SET(SOURCE_FILES) # empty
 SET(SOURCE_INCLUDE_FILES)
 
 FOREACH(subdir ${OPENMM_SOURCE_SUBDIRS})
-    FILE(GLOB_RECURSE src_files  ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/src/*.cpp ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/src/*.c)
-    FILE(GLOB incl_files ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/src/*.h)
+    FILE(GLOB_RECURSE src_files  ${subdir}/src/*.cpp ${subdir}/src/*.c)
+    FILE(GLOB incl_files ${subdir}/src/*.h)
     SET(SOURCE_FILES         ${SOURCE_FILES}         ${src_files})   #append
     SET(SOURCE_INCLUDE_FILES ${SOURCE_INCLUDE_FILES} ${incl_files})
-    INCLUDE_DIRECTORIES(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/${subdir}/include)
+    INCLUDE_DIRECTORIES(BEFORE ${subdir}/include)
 ENDFOREACH(subdir)
 
-SET(COMMON_KERNELS_CPP ${CMAKE_CURRENT_BINARY_DIR}/../common/src/CommonDrudeKernelSources.cpp)
+SET(COMMON_KERNELS_CPP ${CMAKE_CURRENT_BINARY_DIR}/src/CommonDrudeKernelSources.cpp)
 SET(SOURCE_FILES ${SOURCE_FILES} ${COMMON_KERNELS_CPP})
 
 INCLUDE_DIRECTORIES(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-INCLUDE_DIRECTORIES(BEFORE ${CMAKE_CURRENT_SOURCE_DIR}/../common/src)
+INCLUDE_DIRECTORIES(BEFORE ${OPENMM_SOURCE_DIR}/plugins/drude/platforms/common/src)
 INCLUDE_DIRECTORIES(BEFORE ${CMAKE_SOURCE_DIR}/platforms/hip/include)
-INCLUDE_DIRECTORIES(BEFORE ${CMAKE_SOURCE_DIR}/platforms/hip/src)
 INCLUDE_DIRECTORIES(BEFORE ${CMAKE_BINARY_DIR}/platforms/hip/src)
-INCLUDE_DIRECTORIES(BEFORE ${CMAKE_SOURCE_DIR}/platforms/common/include)
-INCLUDE_DIRECTORIES(BEFORE ${CMAKE_BINARY_DIR}/platforms/common/src)
-INCLUDE_DIRECTORIES(BEFORE ${CMAKE_CURRENT_BINARY_DIR}/../common/src)
+INCLUDE_DIRECTORIES(BEFORE ${CMAKE_CURRENT_BINARY_DIR}/src)
 
 # Create the library
 
 # add include / link dirs
 INCLUDE_DIRECTORIES(${MMHIP_INCLUDE_DIRS})
 LINK_DIRECTORIES(${MMHIP_LINK_DIRS})
-
-SET_SOURCE_FILES_PROPERTIES(${COMMON_KERNELS_CPP} PROPERTIES GENERATED TRUE)
 
 SET_SOURCE_FILES_PROPERTIES(${SOURCE_FILES} PROPERTIES COMPILE_FLAGS "${HIPCXXFLAGS}")
 
