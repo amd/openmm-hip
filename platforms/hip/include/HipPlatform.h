@@ -100,6 +100,13 @@ public:
         return key;
     }
     /**
+     * This is the name of the parameter for selecting whether to allow runtime compilation.
+     */
+    static const std::string& HipAllowRuntimeCompiler() {
+        static const std::string key = "HipAllowRuntimeCompiler";
+        return key;
+    }
+    /**
      * This is the name of the parameter for specifying the host compiler for the HIP compiler to use.
      */
     static const std::string& HipHostCompiler() {

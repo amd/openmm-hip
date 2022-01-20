@@ -89,6 +89,7 @@ int main(int argc, char* argv[]) {
         registerHipCompilerKernelFactories();
         // Ensure that we won't use cached kernels.
         platform.setPropertyDefaultValue(HipPlatform::HipTempDirectory(), "this does not exist");
+        platform.setPropertyDefaultValue(HipPlatform::HipAllowRuntimeCompiler(), "true");
         testCoulomb();
     }
     catch(const exception& e) {

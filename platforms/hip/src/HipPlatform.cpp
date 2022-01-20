@@ -114,6 +114,7 @@ HipPlatform::HipPlatform() {
     platformProperties.push_back(HipPrecision());
     platformProperties.push_back(HipUseCpuPme());
     platformProperties.push_back(HipCompiler());
+    platformProperties.push_back(HipAllowRuntimeCompiler());
     platformProperties.push_back(HipTempDirectory());
     platformProperties.push_back(HipHostCompiler());
     platformProperties.push_back(HipDisablePmeStream());
@@ -138,6 +139,13 @@ HipPlatform::HipPlatform() {
         hipcc = "/opt/rocm/bin/hipcc";
     }
     setPropertyDefaultValue(HipCompiler(), hipcc);
+    // Do not use hipRTC by default (it doesn't allow to use a workaround for DPP, see comments in
+    // HipContext::createModule and intrinsics.hip so performance may be a bit lower).
+    // HIP-TODO: Enable when the compiler issue is fixed.
+    // hipRTC on ROCm before 4.3 and earlier has issues so it's not supported
+    char* useHipRtcEnv = getenv("OPENMM_USE_HIPRTC");
+    bool allowRuntimeCompiler = (useHipRtcEnv != NULL && string(useHipRtcEnv) == "1");
+    setPropertyDefaultValue(HipAllowRuntimeCompiler(), allowRuntimeCompiler ? "true" : "false");
     char* tmpdir = getenv("TMPDIR");
     string tmp = (tmpdir == NULL ? string(P_tmpdir) : string(tmpdir));
     setPropertyDefaultValue(HipTempDirectory(), tmp);
@@ -179,6 +187,8 @@ void HipPlatform::contextCreated(ContextImpl& context, const map<string, string>
             getPropertyDefaultValue(HipUseCpuPme()) : properties.find(HipUseCpuPme())->second);
     const string& compilerPropValue = (properties.find(HipCompiler()) == properties.end() ?
             getPropertyDefaultValue(HipCompiler()) : properties.find(HipCompiler())->second);
+    const string& allowRuntimeCompilerValue = (properties.find(HipAllowRuntimeCompiler()) == properties.end() ?
+            getPropertyDefaultValue(HipAllowRuntimeCompiler()) : properties.find(HipAllowRuntimeCompiler())->second);
     const string& tempPropValue = (properties.find(HipTempDirectory()) == properties.end() ?
             getPropertyDefaultValue(HipTempDirectory()) : properties.find(HipTempDirectory())->second);
     const string& hostCompilerPropValue = (properties.find(HipHostCompiler()) == properties.end() ?
@@ -200,12 +210,7 @@ void HipPlatform::contextCreated(ContextImpl& context, const map<string, string>
     char* threadsEnv = getenv("OPENMM_CPU_THREADS");
     if (threadsEnv != NULL)
         stringstream(threadsEnv) >> threads;
-    // Do not use hipRTC by default (it doesn't allow to use a workaround for DPP, see comments in
-    // HipContext::createModule and intrinsics.hip so performance may be a bit lower).
-    // HIP-TODO: Enable when the compiler issue is fixed.
-    // hipRTC on ROCm before 4.3 and earlier has issues so it's not supported
-    char* useHipRtcEnv = getenv("OPENMM_USE_HIPRTC");
-    bool allowRuntimeCompiler = (useHipRtcEnv != NULL && string(useHipRtcEnv) == "1");
+    bool allowRuntimeCompiler = allowRuntimeCompilerValue == "true";
     context.setPlatformData(new PlatformData(&context, context.getSystem(), devicePropValue, blockingPropValue, precisionPropValue, cpuPmePropValue, compilerPropValue, tempPropValue,
             hostCompilerPropValue, pmeStreamPropValue, deterministicForcesValue, threads, allowRuntimeCompiler, NULL));
 }
@@ -287,6 +292,7 @@ HipPlatform::PlatformData::PlatformData(ContextImpl* context, const System& syst
     propertyValues[HipPlatform::HipPrecision()] = precisionProperty;
     propertyValues[HipPlatform::HipUseCpuPme()] = useCpuPme ? "true" : "false";
     propertyValues[HipPlatform::HipCompiler()] = compilerProperty;
+    propertyValues[HipPlatform::HipAllowRuntimeCompiler()] = allowRuntimeCompiler ? "true" : "false";
     propertyValues[HipPlatform::HipTempDirectory()] = tempProperty;
     propertyValues[HipPlatform::HipHostCompiler()] = hostCompilerProperty;
     propertyValues[HipPlatform::HipDisablePmeStream()] = disablePmeStream ? "true" : "false";
