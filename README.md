@@ -4,21 +4,40 @@ OpenMM HIP Plugin
 This plugin adds HIP platform that allows to run [OpenMM](https://openmm.org) on CDNA and RDNA
 AMD GPUs on [AMD ROCm™ open software platform](https://rocmdocs.amd.com).
 
-Installing
-----------
+Installing with Conda
+---------------------
 
-The plugin can be installed using Conda:
+This plugin requires hipFFT, install it from ROCm repositories:
+
+```sh
+apt install hipfft
+```
 
 ```sh
 conda create -n openmm-env -c streamhpc -c conda-forge openmm-hip
+conda activate openmm-env
 ```
 
-This command creates a new environment and install the plugin.
+This command creates a new environment, installs OpenMM and the plugin and activates the new
+environment.
 
-Verify your installation (HIP must be one of available plaforms):
+Verify your installation (HIP must be one of available platforms):
 
 ```sh
 python -m openmm.testInstallation
+```
+
+If there is no HIP among available platforms check why the HIP platform fails to load:
+
+```sh
+python -c "import openmm as mm; print('---Loaded---', *mm.pluginLoadedLibNames, '---Failed---', *mm.Platform.getPluginLoadFailures(), sep='\n')"
+```
+
+Run tests:
+
+```sh
+cd $CONDA_PREFIX/share/openmm/tests/
+./test_openmm_hip.sh
 ```
 
 Run benchmarks (see more options `python benchmark.py --help`):
