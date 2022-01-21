@@ -1,0 +1,66 @@
+{% set name = "openmm-hip" %}
+{% set version = "7.7.0.dev1" %}
+{% set build = 0 %}
+{% set with_test_suite = "true" %}
+
+package:
+  name: {{ name }}
+  version: {{ version }}
+
+source:
+  # # Release build
+  # - git_url: https://github.com/StreamHPC/{{ name }}.git
+  #   git_rev: "master"
+  #   folder: openmm-hip
+  # Local build
+  - path: ../
+    folder: openmm-hip
+  # OpenMM soures are required for building
+  - git_url: https://github.com/StreamHPC/openmm.git
+    git_rev: "develop_stream_hip_split"
+    folder: openmm
+
+build:
+  number: {{ build }}
+  missing_dso_whitelist:
+    - '*/libamdhip64.*'
+    - '*/libhipfft.*'
+  # Setting rpath for ALL libraries allows running OpenMM even if ld.so cannot find libamdhip64
+  # and libhipfft (for example, when /etc/ld.so.conf.d/ does not include /opt/rocm/lib).
+  rpaths:
+    - /opt/rocm/lib
+  script_env:
+    - with_test_suite={{ with_test_suite }}
+
+requirements:
+  build:
+    - {{ compiler('cxx') }}
+    - cmake
+    - make  # [unix]
+  host:
+    - openmm ==7.7.0.dev1
+  run:
+    - openmm ==7.7.0.dev1
+
+test:
+  requires:
+  imports:
+    - openmm
+  script_env:
+    - with_test_suite={{ with_test_suite }}
+
+about:
+  home: http://openmm.org
+  license: LGPL-3.0-or-later
+  license_family: LGPL
+  summary: OpenMM plugin for supporting AMD GPUs on ROCm platform
+  description: |
+    This plugin adds 'HIP' platform that allows to run OpenMM on CDNA and RDNA AMD GPUs
+    on AMD ROCm™ open software platform.
+  doc_url: https://github.com/StreamHPC/{{ name }}
+  dev_url: https://github.com/StreamHPC/{{ name }}
+
+extra:
+  recipe-maintainers:
+    - ex-rzr
+    - AJcodes

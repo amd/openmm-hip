@@ -15,17 +15,9 @@ SET(X86 ON)
 
 # We need to know where OpenMM is installed so we can access the headers and libraries.
 SET(OPENMM_DIR "/usr/local/openmm" CACHE PATH "Where OpenMM is installed")
-GET_FILENAME_COMPONENT(P ${OPENMM_DIR} ABSOLUTE)
-IF(NOT EXISTS ${P})
-    MESSAGE(FATAL_ERROR "Incorrect OPENMM_DIR: ${OPENMM_DIR}")
-ENDIF()
 
 # We need to know where OpenMM source code is located so we can access required files.
 SET(OPENMM_SOURCE_DIR "${CMAKE_SOURCE_DIR}/../openmm" CACHE PATH "Where OpenMM source code is located")
-GET_FILENAME_COMPONENT(P ${OPENMM_SOURCE_DIR} ABSOLUTE)
-IF(NOT EXISTS ${P})
-    MESSAGE(FATAL_ERROR "Incorrect OPENMM_SOURCE_DIR: ${OPENMM_SOURCE_DIR}")
-ENDIF()
 
 INCLUDE_DIRECTORIES(${OPENMM_DIR}/include)
 INCLUDE_DIRECTORIES(${OPENMM_DIR}/include/openmm/reference)
