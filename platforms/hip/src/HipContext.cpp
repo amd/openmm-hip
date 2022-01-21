@@ -60,7 +60,6 @@
 #include <stack>
 #include <typeinfo>
 #include <sys/stat.h>
-#include <roctracer/roctracer_ext.h>
 #include <unistd.h>
 
 
@@ -407,9 +406,6 @@ HipContext::~HipContext() {
         hipModuleUnload(module);
     }
     popAsCurrent();
-    if (contextIsValid && !isLinkedContext) {
-        roctracer_stop();
-    }
     contextIsValid = false;
 }
 
