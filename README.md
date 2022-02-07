@@ -1,11 +1,10 @@
-OpenMM HIP Plugin
-=====================
+# OpenMM HIP Plugin
+
 
 This plugin adds HIP platform that allows to run [OpenMM](https://openmm.org) on CDNA and RDNA
 AMD GPUs on [AMD ROCm™ open software platform](https://rocmdocs.amd.com).
 
-Installing with Conda
----------------------
+## Installing with Conda
 
 This plugin requires hipFFT, install it from ROCm repositories:
 
@@ -53,8 +52,7 @@ To remove OpenMM and the HIP plugin, run:
 conda uninstall openmm-hip openmm
 ```
 
-Building
---------
+## Building
 
 This project uses [CMake](http://www.cmake.org) for its build system.
 
@@ -121,7 +119,52 @@ remove `-D OPENMM_PYTHON_USER_INSTALL=ON`.
 
 Use `ROCM_PATH` environment variable if ROCm is not installed in the default directory (/opt/rocm).
 
-Testing
--------
+## Testing
 
-To run all the test cases build the "test" target, for example by typing `make test`.
+To run all the test cases build the "test" target, for example by typing `make test`, or call
+`ctest --output-on-failure --repeat until-pass:3` (retry three times so stochastic tests have
+a chance).
+
+## Troubleshooting
+
+### FFT backends
+
+There are 3 implementations (backends) of FFT, the default is hipFFT/rocFFT.  It is known that
+rocFFT from ROCm 4.2 and earlier has correctness issues.  If some tests fail or you suspect that
+your simulation with PME produces incorrect results, please try different backends:
+
+* the VkFFT-based implementation (`export OPENMM_FFT_BACKEND=2`), this backend is on par with
+  hipFFT/rocFFT, some FFT sizes are faster, some are slower;
+* the built-in FFT implementation (`export OPENMM_FFT_BACKEND=0`), it may be faster for small
+  simulations with small FFT sizes;
+* the hipFFT/rocFFT-based implementation (`export OPENMM_FFT_BACKEND=1`) - default.
+
+### The kernel compilation: hipcc and hipRTC
+
+By default, the HIP Platform builds kernels with the hipcc compiler. To run the compiler, paths
+in the following order are used:
+
+* `properties['HipCompiler']`, if it is passed to Context constructor;
+* `OPENMM_HIP_COMPILER` environment variable, if it is set;
+* `${ROCM_PATH}/bin/hipcc`, if `ROCM_PATH` environment variable is set;
+* `/opt/rocm/bin/hipcc` otherwise.
+
+There is an alternative way to compile kernels: hipRTC, it is implemented by
+`plugins/hipcompiler`.  To enable this way:
+
+* set `properties['HipAllowRuntimeCompiler'] = 'true'`;
+* set `OPENMM_USE_HIPRTC` environment variable to 1 (`export OPENMM_USE_HIPRTC=1`).
+
+## License
+
+The HIP Platform uses OpenMM API under the terms of the MIT License.  A copy of this license may
+be found in the accompanying file [MIT.txt](licenses/MIT.txt).
+
+The HIP Platform is based on the CUDA Platform of OpenMM under the terms of the GNU Lesser General
+Public License.  A copy of this license may be found in the accompanying file
+[LGPL.txt](licenses/LGPL.txt).  It in turn incorporates the terms of the GNU General Public
+License, which may be found in the accompanying file [GPL.txt](licenses/GPL.txt).
+
+The HIP Platform uses [VkFFT](https://github.com/DTolm/VkFFT) by Dmitrii Tolmachev under the terms
+of the MIT License.  A copy of this license may be found in the accompanying file
+[MIT-VkFFT.txt](licenses/MIT-VkFFT.txt).
