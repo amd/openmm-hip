@@ -6,8 +6,8 @@
  * Biological Structures at Stanford, funded under the NIH Roadmap for        *
  * Medical Research, grant U54 GM072970. See https://simtk.org.               *
  *                                                                            *
- * Portions copyright (c) 2009-2018 Stanford University and the Authors.      *
- * Portions copyright (C) 2020 Advanced Micro Devices, Inc. All Rights        *
+ * Portions copyright (c) 2009-2022 Stanford University and the Authors.      *
+ * Portions copyright (C) 2020-2022 Advanced Micro Devices, Inc. All Rights   *
  * Reserved.                                                                  *
  * Authors: Peter Eastman, Nicholas Curtis                                    *
  * Contributors:                                                              *
@@ -73,7 +73,7 @@ HipNonbondedUtilities::HipNonbondedUtilities(HipContext& context) : context(cont
     int multiprocessors;
     CHECK_RESULT(hipDeviceGetAttribute(&multiprocessors, hipDeviceAttributeMultiprocessorCount, context.getDevice()));
     CHECK_RESULT(hipEventCreateWithFlags(&downloadCountEvent, 0));
-    CHECK_RESULT(hipHostMalloc((void**) &pinnedCountBuffer, 2*sizeof(int), hipHostMallocPortable));
+    CHECK_RESULT(hipHostMalloc((void**) &pinnedCountBuffer, 2*sizeof(unsigned int), hipHostMallocPortable));
     if (context.getSIMDWidth() > 32) {
         numForceThreadBlocks = 4*5*multiprocessors;
         forceThreadBlockSize = 64;
@@ -458,12 +458,13 @@ bool HipNonbondedUtilities::updateNeighborListSize() {
     // this from happening in the future.
 
     if (pinnedCountBuffer[0] > maxTiles) {
-        maxTiles = (int) (1.2*pinnedCountBuffer[0]);
-        int totalTiles = context.getNumAtomBlocks()*(context.getNumAtomBlocks()+1)/2;
+        maxTiles = (unsigned int) (1.2*pinnedCountBuffer[0]);
+        unsigned int numBlocks = context.getNumAtomBlocks();
+        int totalTiles = numBlocks*(numBlocks+1)/2;
         if (maxTiles > totalTiles)
             maxTiles = totalTiles;
         interactingTiles.resize(maxTiles);
-        interactingAtoms.resize(context.getTileSize()*maxTiles);
+        interactingAtoms.resize(context.getTileSize()*(size_t) maxTiles);
         if (forceArgs.size() > 0)
             forceArgs[7] = &interactingTiles.getDevicePointer();
         findInteractingBlocksArgs[6] = &interactingTiles.getDevicePointer();
@@ -472,7 +473,7 @@ bool HipNonbondedUtilities::updateNeighborListSize() {
         findInteractingBlocksArgs[7] = &interactingAtoms.getDevicePointer();
     }
     if (pinnedCountBuffer[1] > maxSinglePairs) {
-        maxSinglePairs = (int) (1.2*pinnedCountBuffer[1]);
+        maxSinglePairs = (unsigned int) (1.2*pinnedCountBuffer[1]);
         singlePairs.resize(maxSinglePairs);
         if (forceArgs.size() > 0)
             forceArgs[19] = &singlePairs.getDevicePointer();

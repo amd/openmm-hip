@@ -9,8 +9,8 @@
  * Biological Structures at Stanford, funded under the NIH Roadmap for        *
  * Medical Research, grant U54 GM072970. See https://simtk.org.               *
  *                                                                            *
- * Portions copyright (c) 2009-2019 Stanford University and the Authors.      *
- * Portions copyright (C) 2020 Advanced Micro Devices, Inc. All Rights        *
+ * Portions copyright (c) 2009-2022 Stanford University and the Authors.      *
+ * Portions copyright (C) 2020-2022 Advanced Micro Devices, Inc. All Rights   *
  * Reserved.                                                                  *
  * Authors: Peter Eastman, Nicholas Curtis                                    *
  * Contributors:                                                              *
@@ -342,7 +342,7 @@ private:
     HipArray rebuildNeighborList;
     HipSort* blockSorter;
     hipEvent_t downloadCountEvent;
-    int* pinnedCountBuffer;
+    unsigned int* pinnedCountBuffer;
     std::vector<void*> forceArgs, findBlockBoundsArgs, sortBoxDataArgs, findInteractingBlocksArgs;
     std::vector<std::vector<int> > atomExclusions;
     std::vector<ParameterInfo> parameters;
@@ -352,8 +352,9 @@ private:
     std::map<int, std::string> groupKernelSource;
     double lastCutoff;
     bool useCutoff, usePeriodic, anyExclusions, usePadding, forceRebuildNeighborList, canUsePairList;
-    int startTileIndex, startBlockIndex, numBlocks, maxTiles, maxSinglePairs, numTilesInBatch, maxExclusions;
+    int startTileIndex, startBlockIndex, numBlocks, numTilesInBatch, maxExclusions;
     int numForceThreadBlocks, forceThreadBlockSize, findInteractingBlocksThreadBlockSize, numAtoms, groupFlags;
+    unsigned int maxTiles, maxSinglePairs;
     long long numTiles;
     std::string kernelSource;
 };

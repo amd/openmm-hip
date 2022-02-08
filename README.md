@@ -1,6 +1,5 @@
 # OpenMM HIP Plugin
 
-
 This plugin adds HIP platform that allows to run [OpenMM](https://openmm.org) on CDNA and RDNA
 AMD GPUs on [AMD ROCm™ open software platform](https://rocmdocs.amd.com).
 

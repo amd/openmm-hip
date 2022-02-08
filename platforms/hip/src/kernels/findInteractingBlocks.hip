@@ -438,12 +438,12 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
                         if (indexInWarp >= i)
                             sum += n;
                     }
-                    int pairStartIndex = 0;
+                    unsigned int pairStartIndex = 0;
                     if (indexInWarp == TILE_SIZE - 1)
                         pairStartIndex = atomicAdd(&interactionCount[1], (unsigned int)sum);
                     pairStartIndex = SHFL(pairStartIndex, TILE_SIZE - 1);
-                    int prevSum = SHFL(sum, indexInWarp - 1);
-                    int pairIndex = pairStartIndex + (indexInWarp > 0 ? prevSum : 0);
+                    unsigned int prevSum = SHFL(sum, indexInWarp - 1);
+                    unsigned int pairIndex = pairStartIndex + (indexInWarp > 0 ? prevSum : 0);
                     if (storeAsSinglePair && pairIndex+interactCount <= maxSinglePairs) {
                         while (interacts != 0) {
                             int j = __TILEFLAGS_FFS(interacts)-1;
@@ -466,11 +466,11 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
                 if (neighborsInBuffer > BUFFER_SIZE-TILE_SIZE) {
                     // Store the new tiles to memory.
 
-                    int tilesToStore = neighborsInBuffer/TILE_SIZE;
-                    int tileStartIndex = 0;
+                    unsigned int tilesToStore = neighborsInBuffer/TILE_SIZE;
+                    unsigned int tileStartIndex = 0;
                     if (indexInWarp == 0)
                         tileStartIndex = atomicAdd(&interactionCount[0], tilesToStore);
-                    int newTileStartIndex = SHFL(tileStartIndex, 0);
+                    unsigned int newTileStartIndex = SHFL(tileStartIndex, 0);
                     if (newTileStartIndex+tilesToStore <= maxTiles) {
                         if (indexInWarp < tilesToStore)
                             interactingTiles[newTileStartIndex+indexInWarp] = x;
@@ -487,11 +487,11 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
         // If we have a partially filled buffer,  store it to memory.
 
         if (neighborsInBuffer > 0) {
-            int tilesToStore = (neighborsInBuffer+TILE_SIZE-1)/TILE_SIZE;
-            int tileStartIndex = 0;
+            unsigned int tilesToStore = (neighborsInBuffer+TILE_SIZE-1)/TILE_SIZE;
+            unsigned int tileStartIndex = 0;
             if (indexInWarp == 0)
                 tileStartIndex = atomicAdd(&interactionCount[0], tilesToStore);
-            int newTileStartIndex = SHFL(tileStartIndex, 0);
+            unsigned int newTileStartIndex = SHFL(tileStartIndex, 0);
             if (newTileStartIndex+tilesToStore <= maxTiles) {
                 if (indexInWarp < tilesToStore)
                     interactingTiles[newTileStartIndex+indexInWarp] = x;
