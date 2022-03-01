@@ -100,7 +100,7 @@ mkdir build build-hip install
 
 git clone https://github.com/StreamHPC/openmm.git -b develop_stream_hip_split
 cd build
-cmake ../openmm/ -D CMAKE_INSTALL_PREFIX=../install -D OPENMM_PYTHON_USER_INSTALL=ON
+cmake ../openmm/ -D CMAKE_INSTALL_PREFIX=../install -D OPENMM_BUILD_COMMON=ON -D OPENMM_PYTHON_USER_INSTALL=ON
 make
 make install
 make PythonInstall

@@ -497,6 +497,8 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     bool saveTemps = saveTempsEnv != nullptr;
     string bits = intToString(8*sizeof(void*));
     string options = "-ffast-math -munsafe-fp-atomics -Wall";
+    // Disable packed math for >=MI200 as it affects performance of some kernels
+    options += " -fno-slp-vectorize -fno-vectorize";
     // HIP-TODO: DPP instructions in nonbonded.hip can cause a compiler crash in 'GCN DPP Combine' pass.
     // Disabling this pass should not affect performance because there are no cases where
     // instructions like v_mov_dpp and v_add_f32 can be combined into one v_add_f32_dpp.
