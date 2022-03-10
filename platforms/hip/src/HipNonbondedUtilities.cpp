@@ -184,6 +184,20 @@ static bool compareInt2(int2 a, int2 b) {
     return ((a.y < b.y) || (a.y == b.y && a.x < b.x));
 }
 
+static bool compareInt2LargeSIMD(int2 a, int2 b) {
+    // This version is used on devices with SIMD width greater than tile size.  It puts diagonal tiles before off-diagonal
+    // ones to reduce thread divergence.
+
+    if (a.x == a.y) {
+        if (b.x == b.y)
+            return (a.x < b.x);
+        return true;
+    }
+    if (b.x == b.y)
+        return false;
+    return ((a.y < b.y) || (a.y == b.y && a.x < b.x));
+}
+
 void HipNonbondedUtilities::initialize(const System& system) {
     if (context.getTileSize() > 32) {
         initialize<unsigned long>(system);
@@ -227,7 +241,7 @@ void HipNonbondedUtilities::initialize(const System& system) {
     vector<int2> exclusionTilesVec;
     for (set<pair<int, int> >::const_iterator iter = tilesWithExclusions.begin(); iter != tilesWithExclusions.end(); ++iter)
         exclusionTilesVec.push_back(make_int2(iter->first, iter->second));
-    sort(exclusionTilesVec.begin(), exclusionTilesVec.end(), compareInt2);
+    sort(exclusionTilesVec.begin(), exclusionTilesVec.end(), tileSize == context.getSIMDWidth() || !useCutoff ? compareInt2 : compareInt2LargeSIMD);
     exclusionTiles.initialize<int2>(context, exclusionTilesVec.size(), "exclusionTiles");
     exclusionTiles.upload(exclusionTilesVec);
     map<pair<int, int>, int> exclusionTileMap;
