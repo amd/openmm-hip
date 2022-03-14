@@ -6,8 +6,8 @@
  * Biological Structures at Stanford, funded under the NIH Roadmap for        *
  * Medical Research, grant U54 GM072970. See https://simtk.org.               *
  *                                                                            *
- * Portions copyright (c) 2008-2021 Stanford University and the Authors.      *
- * Portions copyright (C) 2020-2021 Advanced Micro Devices, Inc. All Rights   *
+ * Portions copyright (c) 2008-2022 Stanford University and the Authors.      *
+ * Portions copyright (C) 2020-2022 Advanced Micro Devices, Inc. All Rights   *
  * Reserved.                                                                  *
  * Authors: Peter Eastman, Nicholas Curtis                                    *
  * Contributors:                                                              *
@@ -280,6 +280,10 @@ void HipUpdateStateDataKernel::setVelocities(ContextImpl& context, const vector<
             velm[i] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
         cu.getVelm().upload(velm);
     }
+}
+
+void HipUpdateStateDataKernel::computeShiftedVelocities(ContextImpl& context, double timeShift, vector<Vec3>& velocities) {
+    cu.getIntegrationUtilities().computeShiftedVelocities(timeShift, velocities);
 }
 
 void HipUpdateStateDataKernel::getForces(ContextImpl& context, vector<Vec3>& forces) {
