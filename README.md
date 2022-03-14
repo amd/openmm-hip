@@ -124,7 +124,7 @@ To run all the test cases build the "test" target, for example by typing `make t
 `ctest --output-on-failure --repeat until-pass:3` (retry three times so stochastic tests have
 a chance).
 
-## Troubleshooting
+## Troubleshooting and performance tuning
 
 ### FFT backends
 
@@ -137,6 +137,12 @@ your simulation with PME produces incorrect results, please try different backen
 * the built-in FFT implementation (`export OPENMM_FFT_BACKEND=0`), it may be faster for small
   simulations with small FFT sizes;
 * the hipFFT/rocFFT-based implementation (`export OPENMM_FFT_BACKEND=1`) - default.
+
+### Tile size
+
+By default the HIP Platform uses tile size of 64 on CDNA and tile size of 32 on RDNA for nonbonded
+interactions. However, tile size of 32 is supported on CDNA too
+(`export OPENMM_FORCE_TILE_SIZE_32=1`), some (usually small) simulations work faster in this mode.
 
 ### The kernel compilation: hipcc and hipRTC
 

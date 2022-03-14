@@ -175,7 +175,9 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
 
     // set device properties
     this->simdWidth = props.warpSize;
-    this->tileSize = simdWidth;
+    char* forceTileSize32Env = getenv("OPENMM_FORCE_TILE_SIZE_32");
+    bool forceTileSize32 = (forceTileSize32Env != NULL && string(forceTileSize32Env) == "1");
+    this->tileSize = forceTileSize32 ? 32 : simdWidth;
     this->sharedMemPerBlock = props.sharedMemPerBlock;
 
     gpuArchitecture = props.gcnArchName;
