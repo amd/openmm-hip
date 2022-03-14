@@ -16,6 +16,7 @@
 #define GROUP_ID blockIdx.x
 #define NUM_GROUPS gridDim.x
 #define SYNC_THREADS __syncthreads();
+#define SYNC_WARPS
 #define MEM_FENCE __threadfence_block();
 #define ATOMIC_ADD(dest, value) atomicAdd(dest, value)
 

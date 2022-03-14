@@ -1,6 +1,17 @@
 /**
- * This file contains the device function for using DPP
+ * This file contains the device function for using shuffle and DPP operations
  */
+
+#if defined(TILE_SIZE)
+#if TILE_SIZE == 32 && !defined(AMD_RDNA)
+// Two subwarps per warp
+#define SHFL(var, srcLane) __shfl(var, (srcLane) & (TILE_SIZE - 1), TILE_SIZE)
+#define BALLOT(var) (unsigned int)(__ballot(var) >> (__lane_id() & ((64 - 1) ^ (TILE_SIZE - 1))))
+#else
+#define SHFL(var, srcLane) __shfl(var, srcLane)
+#define BALLOT(var) __ballot(var)
+#endif
+#endif
 
 template<class T, int dpp_ctrl, int row_mask = 0xf, int bank_mask = 0xf, bool bound_ctrl = true>
 static __inline__ __device__
@@ -23,19 +34,18 @@ T warpMoveDpp(const T& input) {
     return output;
 }
 
-template<class T>
+template<int Subwarp, class T>
 static __inline__ __device__
 T warpShuffle(const T& input, const int src_lane) {
     static_assert(sizeof(T) % sizeof(int) == 0, "incorrect type size");
     constexpr int words_no = sizeof(T) / sizeof(int);
-
 
     T output;
     #pragma unroll
     for(int i = 0; i < words_no; i++) {
         int word;
         __builtin_memcpy(&word, reinterpret_cast<const char*>(&input) + i * sizeof(int), sizeof(int));
-        word = SHFL(word, src_lane);
+        word = __shfl(word, src_lane & (Subwarp - 1), Subwarp);
         __builtin_memcpy(reinterpret_cast<char*>(&output) + i * sizeof(int), &word, sizeof(int));
     }
 
@@ -55,8 +65,7 @@ template<int Subwarp, class T>
 static __inline__ __device__
 typename std::enable_if<!(USE_DPP && Subwarp == 64), T>::type
 warpRotateLeft(const T& input) {
-  int i = ((threadIdx.x + 1) & (Subwarp - 1)) | (threadIdx.x & ~(Subwarp - 1));
-  return warpShuffle(input, i);
+  return warpShuffle<Subwarp>(input, __lane_id() + 1);
 }
 
 template<int Subwarp, class T>

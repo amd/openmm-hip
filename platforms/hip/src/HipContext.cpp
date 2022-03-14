@@ -221,23 +221,8 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
         compilationDefines["AMD_RDNA"] = "";
     compilationDefines["ENABLE_SHUFFLE"] = "1";
     compilationDefines["LOAD_TEMP_ATOM"] = "data = LDATA(tbx+j);";
-    compilationDefines["BROADCAST_WARP_ATOM"] = "LDATA(tbx+j) = warpShuffle(data, j);";
+    compilationDefines["BROADCAST_WARP_ATOM"] = "LDATA(tbx+j) = warpShuffle<TILE_SIZE>(data, j);";
     compilationDefines["SHUFFLE_WARP_ATOM"] = "LDATA(tgx) = warpRotateLeft<TILE_SIZE>(LDATA(tgx));";
-    // GCN hardware is more like CUDA-8, w/ no independent forward progress
-    // or *_sync primatives
-    compilationDefines["SYNC_WARPS"] = "";
-    if (tileSize == simdWidth)
-        compilationDefines["SHFL(var, srcLane)"] = "__shfl(var, srcLane)";
-    else
-        compilationDefines["SHFL(var, srcLane)"] = "__shfl(var, (srcLane) & (" + intToString(tileSize) + " - 1), " + intToString(tileSize) + ")";
-    // Important: the predicate for ballot is defined as an integer, hence
-    // it is important that we convert the variable field to a true/false value
-    // before running ballot, such that we do not discard the top half when
-    // running on a long int
-    if (tileSize == simdWidth)
-        compilationDefines["BALLOT(var)"] = "__ballot((var) != 0)";
-    else
-        compilationDefines["BALLOT(var)"] = "(tileflags)(__ballot((var) != 0) >> (threadIdx.x & ((" + intToString(simdWidth) + " - 1) ^ (" + intToString(tileSize) + " - 1))))";
     if (useDoublePrecision) {
         posq.initialize<double4>(*this, paddedNumAtoms, "posq");
         velm.initialize<double4>(*this, paddedNumAtoms, "velm");
@@ -555,7 +540,7 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
         src << "typedef float4 mixed4;\n";
     }
     if (tileSize > 32) {
-        src << "typedef unsigned long tileflags;\n";
+        src << "typedef unsigned long long tileflags;\n";
         src << "typedef ulong2 tileflags2;\n";
     }
     else {
@@ -564,7 +549,6 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     }
     src << "static_assert(sizeof(tileflags)*8==" << tileSize << ",\"tileflags size does not match TILE_SIZE\");\n";
     src << HipKernelSources::common << endl;
-    src << HipKernelSources::intrinsics << endl;
     for (auto& pair : defines) {
         src << "#define " << pair.first;
         if (!pair.second.empty())
@@ -573,6 +557,7 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     }
     if (!defines.empty())
         src << endl;
+    src << HipKernelSources::intrinsics << endl;
     src << source << endl;
 
     // See whether we already have PTX for this kernel cached.

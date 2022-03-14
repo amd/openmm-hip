@@ -383,7 +383,7 @@ public:
         return false;
     }
     /**
-     * Get the tile size of the device being used.
+     * Get the tile size used for nonbonded interactions.
      */
     int getTileSize() const {
         return tileSize;

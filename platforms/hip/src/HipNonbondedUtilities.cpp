@@ -200,7 +200,7 @@ static bool compareInt2LargeSIMD(int2 a, int2 b) {
 
 void HipNonbondedUtilities::initialize(const System& system) {
     if (context.getTileSize() > 32) {
-        initialize<unsigned long>(system);
+        initialize<unsigned long long>(system);
     }
     else {
         initialize<unsigned int>(system);
