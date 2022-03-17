@@ -14,9 +14,10 @@ fi
 # We run the tests later so no linkage errors will be missed.
 CMAKE_FLAGS+=" -DCMAKE_EXE_LINKER_FLAGS=-Wl,--allow-shlib-undefined"
 
-# HIP config uses find_path() but conda-build sets CMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY making
-# if impossible to find headers in ROCm directories.
-CMAKE_FLAGS+=" -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH"
+# HIP config uses find_path() and find_library() but conda-build sets
+# CMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY making it impossible to find headers and libraries
+# in ROCm directories.
+CMAKE_FLAGS+=" -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH"
 
 # Build in subdirectory and install.
 mkdir -p build
