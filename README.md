@@ -64,10 +64,10 @@ git clone https://github.com/openmm/openmm.git
 
 <!-- TODO Update when HIP-related changes are merged into the main repository -->
 Currently the main repository of OpenMM does not include all changes required for the HIP platform
-so [this branch](https://github.com/StreamHPC/openmm/tree/develop_stream_hip_split) must be used:
+so [this branch](https://github.com/StreamHPC/openmm/tree/develop_stream) must be used:
 
 ```sh
-git clone https://github.com/StreamHPC/openmm.git -b develop_stream_hip_split
+git clone https://github.com/StreamHPC/openmm.git -b develop_stream
 ```
 
 To build the plugin, follow these steps:
@@ -98,7 +98,7 @@ source code:
 ```sh
 mkdir build build-hip install
 
-git clone https://github.com/StreamHPC/openmm.git -b develop_stream_hip_split
+git clone https://github.com/StreamHPC/openmm.git -b develop_stream
 cd build
 cmake ../openmm/ -D CMAKE_INSTALL_PREFIX=../install -D OPENMM_BUILD_COMMON=ON -D OPENMM_PYTHON_USER_INSTALL=ON
 make

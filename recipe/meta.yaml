@@ -1,5 +1,5 @@
 {% set name = "openmm-hip" %}
-{% set version = "7.7.0.dev1" %}
+{% set version = "7.7.0.dev2" %}
 {% set build = 0 %}
 {% set with_test_suite = "true" %}
 
@@ -17,7 +17,7 @@ source:
     folder: openmm-hip
   # OpenMM soures are required for building
   - git_url: https://github.com/StreamHPC/openmm.git
-    git_rev: "develop_stream_hip_split"
+    git_rev: "develop_stream"
     folder: openmm
 
 build:
@@ -38,9 +38,9 @@ requirements:
     - cmake
     - make  # [unix]
   host:
-    - openmm ==7.7.0.dev1
+    - openmm ==7.7.0.dev2
   run:
-    - openmm ==7.7.0.dev1
+    - openmm ==7.7.0.dev2
 
 test:
   requires:
