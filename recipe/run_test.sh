@@ -11,19 +11,23 @@ test -f $PREFIX/lib/plugins/libOpenMMRPMDHIP$SHLIB_EXT
 # Debug silent errors in plugin loading
 python -c "import openmm as mm; print('---Loaded---', *mm.pluginLoadedLibNames, '---Failed---', *mm.Platform.getPluginLoadFailures(), sep='\n')"
 
-# Check all platforms
-python -m openmm.testInstallation
-n_platforms=4
-python -c "from openmm import Platform as P; n = P.getNumPlatforms(); assert n == $n_platforms, f'n_platforms ({n}) != $n_platforms'"
+# Check the HIP platform existence
 python -c "from openmm import Platform as P; P.getPlatformByName('HIP')"
 
-# Run a small MD
-cd ${PREFIX}/share/openmm/examples
-python benchmark.py --test=rf --seconds=10 --platform=Reference
-python benchmark.py --test=rf --seconds=10 --platform=CPU
-python benchmark.py --test=rf --seconds=10 --platform=HIP
+# Run only outside conda-forge docker (CI or build-locally.py), i.e. with `conda build`,
+# assuming there will be a GPU there
+if [[ -z "$CONFIG" ]]; then
+    # Check all platforms
+    python -m openmm.testInstallation
 
-if [[ $with_test_suite == "true" ]]; then
-    cd $PREFIX/share/openmm/tests
-    bash test_openmm_hip.sh
+    # Run a small MD
+    cd ${PREFIX}/share/openmm/examples
+    python benchmark.py --test=rf --seconds=10 --platform=Reference
+    python benchmark.py --test=rf --seconds=10 --platform=CPU
+    python benchmark.py --test=rf --seconds=10 --platform=HIP
+
+    if [[ $with_test_suite == "true" ]]; then
+        cd $PREFIX/share/openmm/tests
+        bash test_openmm_hip.sh
+    fi
 fi

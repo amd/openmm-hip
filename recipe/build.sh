@@ -2,6 +2,16 @@
 
 set -ex
 
+# Install ROCm if inside conda-forge docker (CI or build-locally.py)
+if [[ ! -z "$CONFIG" ]]; then
+    # EPEL repository is required for perl-File-BaseDir and perl-URI-Encode
+    sudo yum -y install epel-release
+    sudo yum -y repolist
+    # Install all required ROCm packages
+    sudo yum -y install https://repo.radeon.com/amdgpu-install/21.50.2/rhel/7.9/amdgpu-install-21.50.2.50002-1.el7.noarch.rpm
+    sudo yum -y install rocm-device-libs hip-devel hip-runtime-amd rocfft-devel hipfft-devel
+fi
+
 CMAKE_FLAGS="${CMAKE_ARGS} -DOPENMM_DIR=${PREFIX} -DCMAKE_INSTALL_PREFIX=${PREFIX}"
 if [[ "$with_test_suite" == "true" ]]; then
     CMAKE_FLAGS+=" -DOPENMM_BUILD_HIP_TESTS=ON"
@@ -9,7 +19,7 @@ else
     CMAKE_FLAGS+=" -DOPENMM_BUILD_HIP_TESTS=OFF"
 fi
 
-# Do not check references to libamdhip64 dependencies for tests, conda-build's ld cn not find them
+# Do not check references to libamdhip64 dependencies for tests, conda-build's ld can not find them
 # because it does not use system paths (/etc/ld.so.conf.d/rocm.conf and amdgpu.conf).
 # We run the tests later so no linkage errors will be missed.
 CMAKE_FLAGS+=" -DCMAKE_EXE_LINKER_FLAGS=-Wl,--allow-shlib-undefined"

@@ -8,13 +8,13 @@ package:
   version: {{ version }}
 
 source:
-  # # Release build
-  # - git_url: https://github.com/StreamHPC/{{ name }}.git
-  #   git_rev: "master"
-  #   folder: openmm-hip
-  # Local build
-  - path: ../
+  # Release build
+  - git_url: https://github.com/StreamHPC/{{ name }}.git
+    git_rev: "master"
     folder: openmm-hip
+  # # Local build
+  # - path: ../
+  #   folder: openmm-hip
   # OpenMM soures are required for building
   - git_url: https://github.com/StreamHPC/openmm.git
     git_rev: "develop_stream"
