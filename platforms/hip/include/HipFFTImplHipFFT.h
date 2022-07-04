@@ -32,7 +32,7 @@
 #include "HipArray.h"
 #include "HipFFTBase.h"
 
-#include <hipfft.h>
+#include <hipfft/hipfft.h>
 
 namespace OpenMM {
 
