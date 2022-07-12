@@ -138,12 +138,6 @@ your simulation with PME produces incorrect results, please try different backen
   simulations with small FFT sizes;
 * the hipFFT/rocFFT-based implementation (`export OPENMM_FFT_BACKEND=1`) - default.
 
-### Tile size
-
-By default the HIP Platform uses tile size of 64 on CDNA and tile size of 32 on RDNA for nonbonded
-interactions. However, tile size of 32 is supported on CDNA too
-(`export OPENMM_FORCE_TILE_SIZE_32=1`), some (usually small) simulations work faster in this mode.
-
 ### The kernel compilation: hipcc and hipRTC
 
 By default, the HIP Platform builds kernels with the hipcc compiler. To run the compiler, paths

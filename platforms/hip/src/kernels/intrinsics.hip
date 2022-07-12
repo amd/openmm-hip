@@ -3,7 +3,7 @@
  */
 
 #if defined(TILE_SIZE)
-#if TILE_SIZE == 32 && !defined(AMD_RDNA)
+#if !defined(AMD_RDNA)
 // Two subwarps per warp
 #define SHFL(var, srcLane) __shfl(var, (srcLane) & (TILE_SIZE - 1), TILE_SIZE)
 #define BALLOT(var) (unsigned int)(__ballot(var) >> (__lane_id() & ((64 - 1) ^ (TILE_SIZE - 1))))

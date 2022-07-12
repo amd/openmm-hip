@@ -763,7 +763,6 @@ void HipCalcNonbondedForceKernel::initialize(const System& system, const Nonbond
                 pmeDefines["USE_FIXED_POINT_CHARGE_SPREADING"] = "1";
             if (usePmeStream)
                 pmeDefines["USE_PME_STREAM"] = "1";
-            pmeDefines["USE_FLAT_KERNELS"] = "1";
             map<string, string> replacements;
             replacements["CHARGE"] = (usePosqCharges ? "pos.w" : "charges[atom]");
             hipModule_t module = cu.createModule(HipKernelSources::vectorOps+cu.replaceStrings(CommonKernelSources::pme, replacements), pmeDefines);

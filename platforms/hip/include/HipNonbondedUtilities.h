@@ -320,8 +320,6 @@ public:
 private:
     class KernelSet;
     class BlockSortTrait;
-    template <typename tileflags>
-    void initialize(const System& system);
     HipContext& context;
     std::map<int, KernelSet> groupKernels;
     HipArray exclusionTiles;

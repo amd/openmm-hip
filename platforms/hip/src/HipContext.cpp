@@ -75,6 +75,7 @@ using namespace OpenMM;
 using namespace std;
 
 const int HipContext::ThreadBlockSize = 64;
+const int HipContext::TileSize = sizeof(tileflags)*8;
 bool HipContext::hasInitializedHip = false;
 
 
@@ -175,9 +176,6 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
 
     // set device properties
     this->simdWidth = props.warpSize;
-    char* forceTileSize32Env = getenv("OPENMM_FORCE_TILE_SIZE_32");
-    bool forceTileSize32 = (forceTileSize32Env != NULL && string(forceTileSize32Env) == "1");
-    this->tileSize = forceTileSize32 ? 32 : simdWidth;
     this->sharedMemPerBlock = props.sharedMemPerBlock;
 
     gpuArchitecture = props.gcnArchName;
@@ -212,8 +210,8 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
         }
     }
     numAtoms = system.getNumParticles();
-    paddedNumAtoms = tileSize*((numAtoms+tileSize-1)/tileSize);
-    numAtomBlocks = (paddedNumAtoms+(tileSize-1))/tileSize;
+    paddedNumAtoms = TileSize*((numAtoms+TileSize-1)/TileSize);
+    numAtomBlocks = (paddedNumAtoms+(TileSize-1))/TileSize;
     int multiprocessors;
     CHECK_RESULT(hipDeviceGetAttribute(&multiprocessors, hipDeviceAttributeMultiprocessorCount, device));
     numThreadBlocks = numThreadBlocksPerComputeUnit*multiprocessors;
@@ -541,15 +539,7 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
         src << "typedef float3 mixed3;\n";
         src << "typedef float4 mixed4;\n";
     }
-    if (tileSize > 32) {
-        src << "typedef unsigned long long tileflags;\n";
-        src << "typedef ulong2 tileflags2;\n";
-    }
-    else {
-        src << "typedef unsigned int tileflags;\n";
-        src << "typedef uint2 tileflags2;\n";
-    }
-    src << "static_assert(sizeof(tileflags)*8==" << tileSize << ",\"tileflags size does not match TILE_SIZE\");\n";
+    src << "typedef unsigned int tileflags;\n";
     src << HipKernelSources::common << endl;
     for (auto& pair : defines) {
         src << "#define " << pair.first;
