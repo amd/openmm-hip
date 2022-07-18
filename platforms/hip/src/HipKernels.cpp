@@ -985,7 +985,7 @@ void HipCalcNonbondedForceKernel::initialize(const System& system, const Nonbond
         replacements["CHARGE1"] = prefix+"charge1";
         replacements["CHARGE2"] = prefix+"charge2";
     }
-    if (hasCoulomb)
+    if (hasCoulomb && !usePosqCharges)
         cu.getNonbondedUtilities().addParameter(HipNonbondedUtilities::ParameterInfo(prefix+"charge", "real", 1, charges.getElementSize(), charges.getDevicePointer()));
     sigmaEpsilon.initialize<float2>(cu, cu.getPaddedNumAtoms(), "sigmaEpsilon");
     if (hasLJ) {
