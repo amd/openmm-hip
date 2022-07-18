@@ -188,18 +188,18 @@ void HipParallelCalcForcesAndEnergyKernel::initialize(const System& system) {
         getKernel(i).initialize(system);
     for (int i = 0; i < numContexts; i++)
         contextNonbondedFractions[i] = 1/(double) numContexts;
-    CHECK_RESULT(hipEventCreateWithFlags(&event, 0), "Error creating event");
+    CHECK_RESULT(hipEventCreateWithFlags(&event, cu.getEventFlags()), "Error creating event");
     peerCopyEvent.resize(numContexts);
     peerCopyEventLocal.resize(numContexts);
     peerCopyStream.resize(numContexts);
     for (int i = 0; i < numContexts; i++) {
-        CHECK_RESULT(hipEventCreateWithFlags(&peerCopyEvent[i], 0), "Error creating event");
+        CHECK_RESULT(hipEventCreateWithFlags(&peerCopyEvent[i], cu.getEventFlags()), "Error creating event");
         CHECK_RESULT(hipStreamCreateWithFlags(&peerCopyStream[i], hipStreamNonBlocking), "Error creating stream");
     }
     for (int i = 0; i < numContexts; i++) {
         HipContext& cuLocal = *data.contexts[i];
         ContextSelector selectorLocal(cuLocal);
-        CHECK_RESULT(hipEventCreateWithFlags(&peerCopyEventLocal[i], 0), "Error creating event");
+        CHECK_RESULT(hipEventCreateWithFlags(&peerCopyEventLocal[i], cu.getEventFlags()), "Error creating event");
     }
     CHECK_RESULT(hipHostMalloc((void**) &interactionCounts, numContexts*sizeof(int2), 0), "Error creating interaction counts buffer");
 }

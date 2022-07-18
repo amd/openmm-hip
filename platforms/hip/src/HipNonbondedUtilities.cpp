@@ -72,7 +72,7 @@ HipNonbondedUtilities::HipNonbondedUtilities(HipContext& context) : context(cont
     string errorMessage = "Error initializing nonbonded utilities";
     int multiprocessors;
     CHECK_RESULT(hipDeviceGetAttribute(&multiprocessors, hipDeviceAttributeMultiprocessorCount, context.getDevice()));
-    CHECK_RESULT(hipEventCreateWithFlags(&downloadCountEvent, 0));
+    CHECK_RESULT(hipEventCreateWithFlags(&downloadCountEvent, context.getEventFlags()));
     CHECK_RESULT(hipHostMalloc((void**) &pinnedCountBuffer, 2*sizeof(unsigned int), hipHostMallocPortable));
     if (context.getSIMDWidth() > 32) {
         numForceThreadBlocks = 4*5*multiprocessors;

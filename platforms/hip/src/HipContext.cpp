@@ -83,7 +83,7 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
         const string& tempDir, const std::string& hostCompiler, bool allowRuntimeCompiler, HipPlatform::PlatformData& platformData,
         HipContext* originalContext) : ComputeContext(system), currentStream(0), platformData(platformData), contextIsValid(false), hasAssignedPosqCharges(false),
         hasCompilerKernel(false), isHipccAvailable(false), pinnedBuffer(NULL), integration(NULL), expression(NULL), bonded(NULL), nonbonded(NULL),
-        fftBackend(0), supportsHardwareFloatGlobalAtomicAdd(false) {
+        useBlockingSync(useBlockingSync), fftBackend(0), supportsHardwareFloatGlobalAtomicAdd(false) {
     // Determine what compiler to use.
 
     this->compiler = "\""+compiler+"\"";
@@ -918,4 +918,11 @@ vector<int> HipContext::getDevicePrecedence() {
     }
 
     return precedence;
+}
+
+unsigned int HipContext::getEventFlags() {
+    unsigned int flags = hipEventDisableTiming;
+    if (useBlockingSync)
+        flags += hipEventBlockingSync;
+    return flags;
 }

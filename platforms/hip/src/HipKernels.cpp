@@ -838,8 +838,8 @@ void HipCalcNonbondedForceKernel::initialize(const System& system, const Nonbond
 
                 if (usePmeStream) {
                     CHECK_RESULT(hipStreamCreateWithFlags(&pmeStream, hipStreamNonBlocking), "Error creating stream for NonbondedForce");
-                    CHECK_RESULT(hipEventCreateWithFlags(&pmeSyncEvent, hipEventDisableTiming), "Error creating event for NonbondedForce");
-                    CHECK_RESULT(hipEventCreateWithFlags(&paramsSyncEvent, hipEventDisableTiming), "Error creating event for NonbondedForce");
+                    CHECK_RESULT(hipEventCreateWithFlags(&pmeSyncEvent, cu.getEventFlags()), "Error creating event for NonbondedForce");
+                    CHECK_RESULT(hipEventCreateWithFlags(&paramsSyncEvent, cu.getEventFlags()), "Error creating event for NonbondedForce");
                     int recipForceGroup = force.getReciprocalSpaceForceGroup();
                     if (recipForceGroup < 0)
                         recipForceGroup = force.getForceGroup();
