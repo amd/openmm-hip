@@ -6,19 +6,20 @@
 extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, real4 invPeriodicBoxSize, real4 periodicBoxVecX, real4 periodicBoxVecY, real4 periodicBoxVecZ,
         const real4* __restrict__ posq, real4* __restrict__ blockCenter, real4* __restrict__ blockBoundingBox, int* __restrict__ rebuildNeighborList,
         real2* __restrict__ sortedBlocks) {
-    int index = blockIdx.x;
-    int base = index * TILE_SIZE;
+    const int indexInTile = threadIdx.x%TILE_SIZE;
+    const int index = warpSize == TILE_SIZE ? blockIdx.x : (blockIdx.x*(warpSize/TILE_SIZE) + threadIdx.x/TILE_SIZE);
+    const int base = index * TILE_SIZE;
+    if (base >= numAtoms)
+        return;
 
-    real4 tPos = ((base + threadIdx.x) < numAtoms) ? posq[base + threadIdx.x] : make_real4(0, 0, 0, 0);
+    real4 tPos = posq[base + indexInTile < numAtoms ? base + indexInTile : 0];
+#ifdef USE_PERIODIC
     real4 pos;
     pos.x = SHFL(tPos.x, 0);
     pos.y = SHFL(tPos.y, 0);
     pos.z = SHFL(tPos.z, 0);
-#ifdef USE_PERIODIC
     APPLY_PERIODIC_TO_POS(pos)
-#endif
 
-#ifdef USE_PERIODIC
     real4 minPos = pos;
     real4 maxPos = pos;
 
@@ -51,7 +52,6 @@ extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, 
         maxPos.y = max(maxPos.y, tpos2.y);
         maxPos.z = max(maxPos.z, tpos2.z);
     }
-#endif
 
     minPos.x = SHFL(minPos.x, 0);
     minPos.y = SHFL(minPos.y, 0);
@@ -59,6 +59,7 @@ extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, 
     maxPos.x = SHFL(maxPos.x, 0);
     maxPos.y = SHFL(maxPos.y, 0);
     maxPos.z = SHFL(maxPos.z, 0);
+#endif
 
     real4 blockSize = 0.5f*(maxPos-minPos);
     real4 center = 0.5f*(maxPos+minPos);
@@ -74,7 +75,7 @@ extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, 
         tcenter = max(tcenter, t);
     }
 
-    if (threadIdx.x == 0) {
+    if (indexInTile == 0) {
         center.w = SQRT(tcenter);
         blockBoundingBox[index] = blockSize;
         blockCenter[index] = center;
