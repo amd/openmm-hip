@@ -530,8 +530,31 @@ void HipNonbondedUtilities::createKernelsForGroups(int groups) {
         if (context.getBoxIsTriclinic())
             defines["TRICLINIC"] = "1";
         defines["MAX_EXCLUSIONS"] = context.intToString(maxExclusions);
-        // HIP-TODO: This may require tuning
-        defines["MAX_BITS_FOR_PAIRS"] = (canUsePairList ? "4" : "0");
+        int maxBits = 0;
+        if (canUsePairList) {
+            if (context.getUseDoublePrecision()) {
+                maxBits = 4;
+            }
+            else {
+                if (context.getSIMDWidth() > 32) {
+                    // CDNA
+                    if (context.getNumAtoms() < 100000)
+                        maxBits = 4;
+                    else // Large systems
+                        maxBits = 0;
+                }
+                else {
+                    // RDNA
+                    if (context.getNumAtoms() < 100000)
+                        maxBits = 4;
+                    else if (context.getNumAtoms() < 500000)
+                        maxBits = 2;
+                    else // Very large systems
+                        maxBits = 0;
+                }
+            }
+        }
+        defines["MAX_BITS_FOR_PAIRS"] = context.intToString(maxBits);
         defines["NUM_TILES_IN_BATCH"] = context.intToString(numTilesInBatch);
         defines["GROUP_SIZE"] = context.intToString(findInteractingBlocksThreadBlockSize);
         hipModule_t interactingBlocksProgram = context.createModule(HipKernelSources::vectorOps+HipKernelSources::findInteractingBlocks, defines);
