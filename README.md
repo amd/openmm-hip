@@ -62,14 +62,6 @@ The plugin requires source code of OpenMM, it can be downloaded as an archive
 git clone https://github.com/openmm/openmm.git
 ```
 
-<!-- TODO Update when HIP-related changes are merged into the main repository -->
-Currently the main repository of OpenMM does not include all changes required for the HIP platform
-so [this branch](https://github.com/StreamHPC/openmm/tree/develop_stream) must be used:
-
-```sh
-git clone https://github.com/StreamHPC/openmm.git -b develop_stream
-```
-
 To build the plugin, follow these steps:
 
 1. Create a directory in which to build the plugin.
@@ -98,7 +90,7 @@ source code:
 ```sh
 mkdir build build-hip install
 
-git clone https://github.com/StreamHPC/openmm.git -b develop_stream
+git clone https://github.com/openmm/openmm.git
 cd build
 cmake ../openmm/ -D CMAKE_INSTALL_PREFIX=../install -D OPENMM_BUILD_COMMON=ON -D OPENMM_PYTHON_USER_INSTALL=ON
 make
