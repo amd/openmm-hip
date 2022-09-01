@@ -220,9 +220,6 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     if (simdWidth == 32)
         compilationDefines["AMD_RDNA"] = "";
     compilationDefines["ENABLE_SHUFFLE"] = "1";
-    compilationDefines["LOAD_TEMP_ATOM"] = "data = LDATA(tbx+j);";
-    compilationDefines["BROADCAST_WARP_ATOM"] = "LDATA(tbx+j) = warpShuffle<TILE_SIZE>(data, j);";
-    compilationDefines["SHUFFLE_WARP_ATOM"] = "LDATA(tgx) = warpRotateLeft<TILE_SIZE>(LDATA(tgx));";
     if (useDoublePrecision) {
         posq.initialize<double4>(*this, paddedNumAtoms, "posq");
         velm.initialize<double4>(*this, paddedNumAtoms, "velm");
@@ -482,13 +479,10 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     bool saveTemps = saveTempsEnv != nullptr;
     string bits = intToString(8*sizeof(void*));
     string options = "-ffast-math -munsafe-fp-atomics -Wall";
-    // Disable packed math for >=MI200 as it affects performance of some kernels
-    options += " -fno-slp-vectorize -fno-vectorize";
-    // HIP-TODO: DPP instructions in nonbonded.hip can cause a compiler crash in 'GCN DPP Combine' pass.
-    // Disabling this pass should not affect performance because there are no cases where
-    // instructions like v_mov_dpp and v_add_f32 can be combined into one v_add_f32_dpp.
-    // Remove -mllvm -amdgpu-dpp-combine=false when the compiler issue is fixed.
-    options += " -mllvm -amdgpu-dpp-combine=false";
+    // HIP-TODO: Remove it when the compiler does a better job
+    // Disable SLP vectorization as it may generate unoptimal packed math instructions on >=MI200
+    // (gfx90a): more v_mov, higher register usage etc.
+    options += " -fno-slp-vectorize";
     if (getMaxThreadBlockSize() < 1024) {
         options += " --gpu-max-threads-per-block=" + std::to_string(getMaxThreadBlockSize());
     }
