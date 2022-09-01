@@ -1,20 +1,21 @@
 #define BUFFER_SIZE 256
 
-// type compat.
-#if TILE_SIZE == 32
-__device__ inline int __TILEFLAGS_FFS(unsigned int x) {
-    return __ffs(x);
-}
-__device__ inline int __TILEFLAGS_POPC(unsigned int x) {
+#if defined(AMD_RDNA)
+
+typedef unsigned int warpflags;
+
+__device__ inline int warpPopc(warpflags x) {
     return __popc(x);
 }
+
 #else
-__device__ inline int __TILEFLAGS_FFS(unsigned long long int x) {
-    return __ffsll(x);
-}
-__device__ inline int __TILEFLAGS_POPC(unsigned long long int x) {
+
+typedef unsigned long long warpflags;
+
+__device__ inline int warpPopc(warpflags x) {
     return __popcll(x);
 }
+
 #endif
 
 /**
@@ -23,19 +24,20 @@ __device__ inline int __TILEFLAGS_POPC(unsigned long long int x) {
 extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, real4 invPeriodicBoxSize, real4 periodicBoxVecX, real4 periodicBoxVecY, real4 periodicBoxVecZ,
         const real4* __restrict__ posq, real4* __restrict__ blockCenter, real4* __restrict__ blockBoundingBox, int* __restrict__ rebuildNeighborList,
         real2* __restrict__ sortedBlocks) {
-    int index = blockIdx.x;
-    int base = index * TILE_SIZE;
+    const int indexInTile = threadIdx.x%TILE_SIZE;
+    const int index = warpSize == TILE_SIZE ? blockIdx.x : (blockIdx.x*(warpSize/TILE_SIZE) + threadIdx.x/TILE_SIZE);
+    const int base = index * TILE_SIZE;
+    if (base >= numAtoms)
+        return;
 
-    real4 tPos = ((base + threadIdx.x) < numAtoms) ? posq[base + threadIdx.x] : make_real4(0, 0, 0, 0);
+    real4 tPos = posq[base + indexInTile < numAtoms ? base + indexInTile : 0];
+#ifdef USE_PERIODIC
     real4 pos;
     pos.x = SHFL(tPos.x, 0);
     pos.y = SHFL(tPos.y, 0);
     pos.z = SHFL(tPos.z, 0);
-#ifdef USE_PERIODIC
     APPLY_PERIODIC_TO_POS(pos)
-#endif
 
-#ifdef USE_PERIODIC
     real4 minPos = pos;
     real4 maxPos = pos;
 
@@ -68,7 +70,6 @@ extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, 
         maxPos.y = max(maxPos.y, tpos2.y);
         maxPos.z = max(maxPos.z, tpos2.z);
     }
-#endif
 
     minPos.x = SHFL(minPos.x, 0);
     minPos.y = SHFL(minPos.y, 0);
@@ -76,6 +77,7 @@ extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, 
     maxPos.x = SHFL(maxPos.x, 0);
     maxPos.y = SHFL(maxPos.y, 0);
     maxPos.z = SHFL(maxPos.z, 0);
+#endif
 
     real4 blockSize = 0.5f*(maxPos-minPos);
     real4 center = 0.5f*(maxPos+minPos);
@@ -91,7 +93,7 @@ extern "C" __global__ void findBlockBounds(int numAtoms, real4 periodicBoxSize, 
         tcenter = max(tcenter, t);
     }
 
-    if (threadIdx.x == 0) {
+    if (indexInTile == 0) {
         center.w = SQRT(tcenter);
         blockBoundingBox[index] = blockSize;
         blockCenter[index] = center;
@@ -135,18 +137,37 @@ extern "C" __global__ void sortBoxData(const real2* __restrict__ sortedBlock, co
     }
 }
 
+#if MAX_BITS_FOR_PAIRS > 0
+
 __device__ inline
-unsigned int extractSignBit(float d) {
-    return __float_as_uint(d) >> 31;
+void collectInteractions(unsigned int& interacts, float d, int bit) {
+    interacts |= (__float_as_uint(d) >> 31) << bit;
 }
 
 __device__ inline
-unsigned int extractSignBit(double d) {
-    return ((unsigned int)__double2hiint(d)) >> 31;
+void collectInteractions(unsigned int& interacts, double d, int bit) {
+    interacts |= ((unsigned int)__double2hiint(d) >> 31) << bit;
 }
 
-#if TILE_SIZE == 64 && !defined(USE_DOUBLE_PRECISION) && \
-    (defined(__gfx908__) || defined(__gfx90a__))
+#else
+
+// Simplified version that does not collect individual bits (they are not needed without single pairs),
+// only sets the flag that there are any interactions.
+
+__device__ inline
+void collectInteractions(unsigned int& interacts, float d, int) {
+    interacts |= __float_as_uint(d) & (1 << 31);
+}
+
+__device__ inline
+void collectInteractions(unsigned int& interacts, double d, int) {
+    interacts |= (unsigned int)__double2hiint(d) & (1 << 31);
+}
+
+#endif
+
+#if !defined(USE_DOUBLE_PRECISION) && \
+    (defined(__gfx908__) || defined(__gfx90a__) || defined(__gfx940__))
 
 #define USE_MFMA
 
@@ -162,7 +183,7 @@ void mfma4x4(const float4& pos1, const float4& pos2, const vfloat& c, unsigned i
     d = __builtin_amdgcn_mfma_f32_4x4x1f32(pos1.w,    1.0f, d, 4, BlockId, 0);
     #pragma unroll
     for (int i = 0; i < 4; i++) {
-        interacts |= extractSignBit(d[i]) << (BlockId * 4 + i)%32;
+        collectInteractions(interacts, d[i], BlockId * 4 + i);
     }
 }
 
@@ -217,7 +238,7 @@ void mfma4x4(const float4& pos1, const float4& pos2, const vfloat& c, unsigned i
  * [in] rebuildNeighbourList   - whether or not to execute this kernel
  *
  */
-extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, real4 invPeriodicBoxSize, real4 periodicBoxVecX, real4 periodicBoxVecY, real4 periodicBoxVecZ,
+extern "C" __global__ __launch_bounds__(GROUP_SIZE) void findBlocksWithInteractions(real4 periodicBoxSize, real4 invPeriodicBoxSize, real4 periodicBoxVecX, real4 periodicBoxVecY, real4 periodicBoxVecZ,
         unsigned int* __restrict__ interactionCount, int* __restrict__ interactingTiles, unsigned int* __restrict__ interactingAtoms,
         int2* __restrict__ singlePairs, const real4* __restrict__ posq, unsigned int maxTiles, unsigned int maxSinglePairs,
         unsigned int startBlockIndex, unsigned int numBlocks, real2* __restrict__ sortedBlocks, const real4* __restrict__ sortedBlockCenter,
@@ -227,15 +248,24 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
     if (rebuildNeighborList[0] == 0)
         return; // The neighbor list doesn't need to be rebuilt.
 
-    const int indexInWarp = threadIdx.x%TILE_SIZE;
-    const int warpStart = threadIdx.x-indexInWarp;
-    const int warpIndex = blockIdx.x*(GROUP_SIZE/TILE_SIZE) + (GROUP_SIZE == TILE_SIZE ? 0 : threadIdx.x/TILE_SIZE);
-    const tileflags warpMask = (static_cast<tileflags>(1)<<indexInWarp)-1;
-    __shared__ int workgroupBuffer[BUFFER_SIZE*(GROUP_SIZE/TILE_SIZE)];
-    __shared__ int warpExclusions[MAX_EXCLUSIONS*(GROUP_SIZE/TILE_SIZE)];
-    __shared__ real4 posBuffer[GROUP_SIZE];
-    int* buffer = workgroupBuffer+BUFFER_SIZE*(warpStart/TILE_SIZE);
-    int* exclusionsForX = warpExclusions+MAX_EXCLUSIONS*(warpStart/TILE_SIZE);
+    constexpr int tilesPerWarp = warpSize/TILE_SIZE;
+    constexpr int warpsPerBlock = GROUP_SIZE/warpSize;
+    const int indexInWarp = threadIdx.x%warpSize;
+    const int indexInTile = threadIdx.x%TILE_SIZE;
+    const int tileInWarp = tilesPerWarp == 1 ? 0 : (threadIdx.x/TILE_SIZE)%tilesPerWarp;
+    const int warpInBlock = warpsPerBlock == 1 ? 0 : threadIdx.x/warpSize;
+    const int warpIndex = blockIdx.x*warpsPerBlock + (warpsPerBlock == 1 ? 0 : warpInBlock);
+    const warpflags warpMask = (static_cast<warpflags>(1)<<indexInWarp)-1;
+
+    __shared__ int workgroupBuffer[BUFFER_SIZE*warpsPerBlock];
+    __shared__ real4 workgroupPosBuffer[TILE_SIZE*warpsPerBlock];
+    __shared__ int workgroupExclusions[MAX_EXCLUSIONS*warpsPerBlock];
+    __shared__ int workgroupBlock2Buffer[(warpSize+1)*warpsPerBlock];
+
+    int* buffer = workgroupBuffer+BUFFER_SIZE*warpInBlock;
+    real4* posBuffer = workgroupPosBuffer+TILE_SIZE*warpInBlock;
+    int* exclusionsForX = workgroupExclusions+MAX_EXCLUSIONS*warpInBlock;
+    int* block2Buffer = workgroupBlock2Buffer+(warpSize+1)*warpInBlock;
 
     // Loop over blocks.
 
@@ -248,7 +278,7 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
         real4 blockCenterX = sortedBlockCenter[block1];
         real4 blockSizeX = sortedBlockBoundingBox[block1];
         int neighborsInBuffer = 0;
-        real4 pos1 = posq[x*TILE_SIZE+indexInWarp];
+        real4 pos1 = posq[x*TILE_SIZE+indexInTile];
     #ifdef USE_PERIODIC
         const bool singlePeriodicCopy = (0.5f*periodicBoxSize.x-blockSizeX.x >= PADDED_CUTOFF &&
                                          0.5f*periodicBoxSize.y-blockSizeX.y >= PADDED_CUTOFF &&
@@ -261,68 +291,86 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
         }
     #endif
         pos1.w = 0.5f * (pos1.x * pos1.x + pos1.y * pos1.y + pos1.z * pos1.z);
-        posBuffer[warpStart+indexInWarp] = pos1;
+        if (tileInWarp == 0) {
+            posBuffer[indexInTile] = pos1;
+        }
 
         // Load exclusion data for block x.
 
         const int exclusionStart = exclusionRowIndices[x];
         const int exclusionEnd = exclusionRowIndices[x+1];
         const int numExclusions = exclusionEnd-exclusionStart;
-        for (int j = indexInWarp; j < numExclusions; j += TILE_SIZE)
+        #pragma unroll 1
+        for (int j = indexInWarp; j < numExclusions; j += warpSize)
             exclusionsForX[j] = exclusionIndices[exclusionStart+j];
-        if (MAX_EXCLUSIONS > TILE_SIZE)
-            __syncthreads();
 
-        // Loop over atom blocks to search for neighbors.  The threads in a warp compare block1 against TILE_SIZE
+        // Loop over atom blocks to search for neighbors.  The threads in a warp compare block1 against warpSize
         // other blocks in parallel.
         // For small systems multiple warps (NUM_TILES_IN_BATCH = 4, 2...) process one block1 reducing the overall
         // duration of the kernel because first blocks block1 have to process more block2 blocks so most of compute
         // units are idle at the end of the kernel (the kernel works on the upper triangle of
         // the NUM_BLOCKS x NUM_BLOCKS matrix).
 
-        for (int block2Base = block1+1+(warpIndex%NUM_TILES_IN_BATCH); block2Base < NUM_BLOCKS; block2Base += TILE_SIZE*NUM_TILES_IN_BATCH) {
-            int block2 = block2Base+indexInWarp*NUM_TILES_IN_BATCH;
-            bool includeBlock2 = (block2 < NUM_BLOCKS);
+        int block2Count = 0;
+        // Load blocks from addresses aligned by warpSize for faster loading from sortedBlockCenter and sortedBlockBoundingBox.
+        for (int block2Base = ((block1+1)/warpSize + warpIndex%NUM_TILES_IN_BATCH)*warpSize; block2Base < NUM_BLOCKS; block2Base += warpSize*NUM_TILES_IN_BATCH) {
+            const bool lastIteration = block2Base + warpSize*NUM_TILES_IN_BATCH >= NUM_BLOCKS;
+            int block2 = block2Base+indexInWarp;
+            bool includeBlock2 = (block1 < block2 && block2 < NUM_BLOCKS);
+            block2 = includeBlock2 ? block2 : block1;
             bool forceInclude = false;
-            if (includeBlock2) {
-                real4 blockCenterY = sortedBlockCenter[block2];
-                real4 blockSizeY = sortedBlockBoundingBox[block2];
-                real4 blockDelta = blockCenterX-blockCenterY;
+            real4 blockCenterY = sortedBlockCenter[block2];
+            real4 blockDelta = blockCenterX-blockCenterY;
     #ifdef USE_PERIODIC
-                APPLY_PERIODIC_TO_DELTA(blockDelta)
+            APPLY_PERIODIC_TO_DELTA(blockDelta)
     #endif
-                includeBlock2 &= (blockDelta.x*blockDelta.x+blockDelta.y*blockDelta.y+blockDelta.z*blockDelta.z < (PADDED_CUTOFF+blockCenterX.w+blockCenterY.w)*(PADDED_CUTOFF+blockCenterX.w+blockCenterY.w));
-                blockDelta.x = max(0.0f, fabs(blockDelta.x)-blockSizeX.x-blockSizeY.x);
-                blockDelta.y = max(0.0f, fabs(blockDelta.y)-blockSizeX.y-blockSizeY.y);
-                blockDelta.z = max(0.0f, fabs(blockDelta.z)-blockSizeX.z-blockSizeY.z);
-                includeBlock2 &= (blockDelta.x*blockDelta.x+blockDelta.y*blockDelta.y+blockDelta.z*blockDelta.z < PADDED_CUTOFF_SQUARED);
+            includeBlock2 &= (blockDelta.x*blockDelta.x+blockDelta.y*blockDelta.y+blockDelta.z*blockDelta.z < (PADDED_CUTOFF+blockCenterX.w+blockCenterY.w)*(PADDED_CUTOFF+blockCenterX.w+blockCenterY.w));
+    #ifndef TRICLINIC
+            if (!lastIteration && __ballot(includeBlock2) == 0)
+                continue;
+    #endif
+            real4 blockSizeY = sortedBlockBoundingBox[block2];
+            blockDelta.x = max(0.0f, fabs(blockDelta.x)-blockSizeX.x-blockSizeY.x);
+            blockDelta.y = max(0.0f, fabs(blockDelta.y)-blockSizeX.y-blockSizeY.y);
+            blockDelta.z = max(0.0f, fabs(blockDelta.z)-blockSizeX.z-blockSizeY.z);
+            includeBlock2 &= (blockDelta.x*blockDelta.x+blockDelta.y*blockDelta.y+blockDelta.z*blockDelta.z < PADDED_CUTOFF_SQUARED);
     #ifdef TRICLINIC
-                // The calculation to find the nearest periodic copy is only guaranteed to work if the nearest copy is less than half a box width away.
-                // If there's any possibility we might have missed it, do a detailed check.
+            // The calculation to find the nearest periodic copy is only guaranteed to work if the nearest copy is less than half a box width away.
+            // If there's any possibility we might have missed it, do a detailed check.
 
-                if (periodicBoxSize.z/2-blockSizeX.z-blockSizeY.z < PADDED_CUTOFF || periodicBoxSize.y/2-blockSizeX.y-blockSizeY.y < PADDED_CUTOFF)
-                    includeBlock2 = forceInclude = true;
+            if (periodicBoxSize.z/2-blockSizeX.z-blockSizeY.z < PADDED_CUTOFF || periodicBoxSize.y/2-blockSizeX.y-blockSizeY.y < PADDED_CUTOFF)
+                includeBlock2 = forceInclude = true;
     #endif
-                if (includeBlock2) {
-                    int y = (int) sortedBlocks[block2].y;
-                    for (int k = 0; k < numExclusions; k++)
-                        includeBlock2 &= (exclusionsForX[k] != y);
-                }
+
+            // Collect any blocks we identified as potentially containing neighbors.
+
+            warpflags includeBlockFlags = __ballot(includeBlock2);
+            if (includeBlock2) {
+                int index = block2Count + warpPopc(includeBlockFlags&warpMask);
+                block2Buffer[index] = (block2 << 1) | (forceInclude ? 1 : 0);
             }
+            block2Count += warpPopc(includeBlockFlags);
 
-            // Loop over any blocks we identified as potentially containing neighbors.
+            // Loop over the collected candidates (each warp processes 2 blocks on CDNA or 1 block on RDNA).
+            // Process even number of blocks on CDNA so both half-warps have work to do (except for
+            // the last iteration of the for-block2Base loop when the left-over must be processed).
 
-            tileflags includeBlockFlags = BALLOT(includeBlock2);
-            tileflags forceIncludeFlags = BALLOT(forceInclude);
-            while (includeBlockFlags != 0) {
-                int i = __TILEFLAGS_FFS(includeBlockFlags)-1;
-                includeBlockFlags &= includeBlockFlags-1;
-                forceInclude = (unsigned int)(forceIncludeFlags>>i) & 1;
-                int y = (int) sortedBlocks[block2Base+i*NUM_TILES_IN_BATCH].y;
+            const int block2ToProcess = lastIteration ? block2Count : block2Count/tilesPerWarp*tilesPerWarp;
+            for (int block2Index = 0; block2Index < block2ToProcess; block2Index += tilesPerWarp) {
+                bool includeBlock2 = block2Index + tileInWarp < block2Count;
+                const int b = block2Buffer[min(block2Index + tileInWarp, block2Count - 1)];
+                const bool forceInclude = b & 1;
+                const int block2 = b >> 1;
+                int y = (int) sortedBlocks[block2].y;
+
+                #pragma unroll 1
+                for (int k = indexInTile; k < numExclusions; k += TILE_SIZE)
+                    includeBlock2 &= (exclusionsForX[k] != y);
+                includeBlock2 = BALLOT(!includeBlock2) == 0;
 
                 // Check each atom in block Y for interactions.
 
-                int atom2 = y*TILE_SIZE+indexInWarp;
+                int atom2 = y*TILE_SIZE+indexInTile;
                 real4 pos2 = posq[atom2];
     #ifdef USE_PERIODIC
                 if (singlePeriodicCopy) {
@@ -330,158 +378,120 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
                 }
     #endif
                 pos2.w = 0.5f * (pos2.x * pos2.x + pos2.y * pos2.y + pos2.z * pos2.z);
-                real4 blockCenterY = sortedBlockCenter[block2Base+i*NUM_TILES_IN_BATCH];
+                real4 blockCenterY = sortedBlockCenter[block2];
                 real3 atomDelta = trimTo3(pos1)-trimTo3(blockCenterY);
     #ifdef USE_PERIODIC
                 APPLY_PERIODIC_TO_DELTA(atomDelta)
     #endif
                 tileflags atomFlags = BALLOT(forceInclude || atomDelta.x*atomDelta.x+atomDelta.y*atomDelta.y+atomDelta.z*atomDelta.z < (PADDED_CUTOFF+blockCenterY.w)*(PADDED_CUTOFF+blockCenterY.w));
                 tileflags interacts = 0;
-                if (atomFlags != 0) {
-                    // The condition `posj.w + pos2.w - posj.x*pos2.x - posj.y*pos2.y - posj.z*pos2.z < 0.5f * PADDED_CUTOFF_SQUARED` is expressed as
-                    // `posj.x*pos2.x - posj.y*pos2.y - posj.z*pos2.z - posj.w - 0.5f * PADDED_CUTOFF_SQUARED - pos2.w` and computed using fma
-                    // (it saves 1 instruction).
-                    // Sign bit is used directly instead of `halfDist2 < 0.5f * PADDED_CUTOFF_SQUARED ? 1<<j : 0`.
+                // The condition `posj.w + pos2.w - posj.x*pos2.x - posj.y*pos2.y - posj.z*pos2.z < 0.5f * PADDED_CUTOFF_SQUARED` is expressed as
+                // `posj.x*pos2.x - posj.y*pos2.y - posj.z*pos2.z - posj.w - 0.5f * PADDED_CUTOFF_SQUARED - pos2.w` and computed using fma
+                // (it saves 1 instruction).
+                // Sign bit is used directly instead of `halfDist2 < 0.5f * PADDED_CUTOFF_SQUARED ? 1<<j : 0`.
     #ifdef USE_PERIODIC
-                    if (!singlePeriodicCopy) {
-                        while (atomFlags) {
-                            int j = __TILEFLAGS_FFS(atomFlags)-1;
-                            atomFlags = atomFlags ^ (static_cast<tileflags>(1) << j);
-                            real3 delta = trimTo3(pos2)-trimTo3(posBuffer[warpStart+j]);
-                            APPLY_PERIODIC_TO_DELTA(delta)
-                            real d = delta.x*delta.x+delta.y*delta.y+delta.z*delta.z - PADDED_CUTOFF_SQUARED;
-                            interacts |= static_cast<tileflags>(extractSignBit(d)) << j;
-                        }
+                if (!singlePeriodicCopy) {
+                    while (atomFlags) {
+                        int j = __ffs(atomFlags)-1;
+                        atomFlags = atomFlags ^ (static_cast<tileflags>(1) << j);
+                        real3 delta = trimTo3(pos2)-trimTo3(posBuffer[j]);
+                        APPLY_PERIODIC_TO_DELTA(delta)
+                        real d = delta.x*delta.x+delta.y*delta.y+delta.z*delta.z - PADDED_CUTOFF_SQUARED;
+                        collectInteractions(interacts, d, j);
                     }
-                    else {
-    #endif
-                        const real lim = 0.5f * PADDED_CUTOFF_SQUARED - pos2.w;
-    #if defined(USE_MFMA)
-                        unsigned int interacts0 = 0;
-                        unsigned int interacts1 = 0;
-                        const vfloat c = { -lim, -lim, -lim, -lim };
-                        if (__TILEFLAGS_POPC(atomFlags) < TILE_SIZE/2) {
-                            const unsigned int atomFlags0 = static_cast<unsigned int>(atomFlags);
-                            const unsigned int atomFlags1 = static_cast<unsigned int>(atomFlags >> 32);
-                            if (atomFlags0 & (0xf << 0*4)) mfma4x4<0+0>(pos1, pos2, c, interacts0);
-                            if (atomFlags0 & (0xf << 1*4)) mfma4x4<0+1>(pos1, pos2, c, interacts0);
-                            if (atomFlags0 & (0xf << 2*4)) mfma4x4<0+2>(pos1, pos2, c, interacts0);
-                            if (atomFlags0 & (0xf << 3*4)) mfma4x4<0+3>(pos1, pos2, c, interacts0);
-                            if (atomFlags0 & (0xf << 4*4)) mfma4x4<0+4>(pos1, pos2, c, interacts0);
-                            if (atomFlags0 & (0xf << 5*4)) mfma4x4<0+5>(pos1, pos2, c, interacts0);
-                            if (atomFlags0 & (0xf << 6*4)) mfma4x4<0+6>(pos1, pos2, c, interacts0);
-                            if (atomFlags0 & (0xf << 7*4)) mfma4x4<0+7>(pos1, pos2, c, interacts0);
-                            if (atomFlags1 & (0xf << 0*4)) mfma4x4<8+0>(pos1, pos2, c, interacts1);
-                            if (atomFlags1 & (0xf << 1*4)) mfma4x4<8+1>(pos1, pos2, c, interacts1);
-                            if (atomFlags1 & (0xf << 2*4)) mfma4x4<8+2>(pos1, pos2, c, interacts1);
-                            if (atomFlags1 & (0xf << 3*4)) mfma4x4<8+3>(pos1, pos2, c, interacts1);
-                            if (atomFlags1 & (0xf << 4*4)) mfma4x4<8+4>(pos1, pos2, c, interacts1);
-                            if (atomFlags1 & (0xf << 5*4)) mfma4x4<8+5>(pos1, pos2, c, interacts1);
-                            if (atomFlags1 & (0xf << 6*4)) mfma4x4<8+6>(pos1, pos2, c, interacts1);
-                            if (atomFlags1 & (0xf << 7*4)) mfma4x4<8+7>(pos1, pos2, c, interacts1);
-                        }
-                        else {
-                            mfma4x4<0+0>(pos1, pos2, c, interacts0);
-                            mfma4x4<0+1>(pos1, pos2, c, interacts0);
-                            mfma4x4<0+2>(pos1, pos2, c, interacts0);
-                            mfma4x4<0+3>(pos1, pos2, c, interacts0);
-                            mfma4x4<0+4>(pos1, pos2, c, interacts0);
-                            mfma4x4<0+5>(pos1, pos2, c, interacts0);
-                            mfma4x4<0+6>(pos1, pos2, c, interacts0);
-                            mfma4x4<0+7>(pos1, pos2, c, interacts0);
-                            mfma4x4<8+0>(pos1, pos2, c, interacts1);
-                            mfma4x4<8+1>(pos1, pos2, c, interacts1);
-                            mfma4x4<8+2>(pos1, pos2, c, interacts1);
-                            mfma4x4<8+3>(pos1, pos2, c, interacts1);
-                            mfma4x4<8+4>(pos1, pos2, c, interacts1);
-                            mfma4x4<8+5>(pos1, pos2, c, interacts1);
-                            mfma4x4<8+6>(pos1, pos2, c, interacts1);
-                            mfma4x4<8+7>(pos1, pos2, c, interacts1);
-                        }
-                        interacts = (static_cast<tileflags>(interacts1) << 32) | static_cast<tileflags>(interacts0);
-    #else
-                        if (__TILEFLAGS_POPC(atomFlags) < TILE_SIZE/2 && TILE_SIZE == warpSize) {
-                            while (atomFlags) {
-                                int j = __TILEFLAGS_FFS(atomFlags)-1;
-                                atomFlags = atomFlags ^ (static_cast<tileflags>(1) << j);
-                                real4 posj = posBuffer[warpStart+j];
-                                real d = fma(-posj.x, pos2.x, fma(-posj.y, pos2.y, fma(-posj.z, pos2.z, posj.w - lim)));
-                                interacts |= static_cast<tileflags>(extractSignBit(d)) << j;
-                            }
-                        }
-                        else {
-                            #pragma unroll
-                            for (int j = 0; j < TILE_SIZE; j++) {
-                                real4 posj = posBuffer[warpStart+j];
-                                real d = fma(-posj.x, pos2.x, fma(-posj.y, pos2.y, fma(-posj.z, pos2.z, posj.w - lim)));
-                                interacts |= static_cast<tileflags>(extractSignBit(d)) << j;
-                            }
-                        }
-    #endif
-    #ifdef USE_PERIODIC
-                    }
-    #endif
                 }
-                if (atom2 >= NUM_ATOMS) {
+                else {
+    #endif
+                    const real lim = 0.5f * PADDED_CUTOFF_SQUARED - pos2.w;
+    #if defined(USE_MFMA)
+                    const vfloat c = { -lim, -lim, -lim, -lim };
+                    mfma4x4<0>(pos1, pos2, c, interacts);
+                    mfma4x4<1>(pos1, pos2, c, interacts);
+                    mfma4x4<2>(pos1, pos2, c, interacts);
+                    mfma4x4<3>(pos1, pos2, c, interacts);
+                    mfma4x4<4>(pos1, pos2, c, interacts);
+                    mfma4x4<5>(pos1, pos2, c, interacts);
+                    mfma4x4<6>(pos1, pos2, c, interacts);
+                    mfma4x4<7>(pos1, pos2, c, interacts);
+    #else
+                    while (atomFlags) {
+                        int j = __ffs(atomFlags)-1;
+                        atomFlags = atomFlags ^ (static_cast<tileflags>(1) << j);
+                        real4 posj = posBuffer[j];
+                        real d = fma(-posj.x, pos2.x, fma(-posj.y, pos2.y, fma(-posj.z, pos2.z, posj.w - lim)));
+                        collectInteractions(interacts, d, j);
+                    }
+    #endif
+    #ifdef USE_PERIODIC
+                }
+    #endif
+                if (atom2 >= NUM_ATOMS || !includeBlock2) {
                     interacts = 0;
                 }
 
-                const int interactCount = __TILEFLAGS_POPC(interacts);
+    #if MAX_BITS_FOR_PAIRS > 0
+                const unsigned int interactCount = __popc(interacts);
 
                 // Record interactions that should be computed as single pairs rather than in blocks.
-    #if MAX_BITS_FOR_PAIRS > 0
                 const bool storeAsSinglePair = interactCount > 0 && interactCount <= MAX_BITS_FOR_PAIRS;
-                if (BALLOT(storeAsSinglePair)) {
-                    int sum = (storeAsSinglePair ? interactCount : 0);
-                    for (int i = 1; i < TILE_SIZE; i *= 2) {
-                        int n = SHFL(sum, indexInWarp - i);
-                        if (indexInWarp >= i)
-                            sum += n;
+                if (__ballot(storeAsSinglePair)) {
+                    unsigned int sum = 0;
+                    unsigned int prevSum = 0;
+                    for (int i = 1; i <= MAX_BITS_FOR_PAIRS; i++) {
+                        warpflags b = __ballot(interactCount == i);
+                        sum += warpPopc(b) * i;
+                        prevSum += warpPopc(b&warpMask) * i;
                     }
                     unsigned int pairStartIndex = 0;
-                    if (indexInWarp == TILE_SIZE - 1)
-                        pairStartIndex = atomicAdd(&interactionCount[1], (unsigned int)sum);
-                    pairStartIndex = SHFL(pairStartIndex, TILE_SIZE - 1);
-                    unsigned int prevSum = SHFL(sum, indexInWarp - 1);
-                    unsigned int pairIndex = pairStartIndex + (indexInWarp > 0 ? prevSum : 0);
+                    if (indexInWarp == 0)
+                        pairStartIndex = atomicAdd(&interactionCount[1], sum);
+                    pairStartIndex = __shfl(pairStartIndex, 0);
+                    unsigned int pairIndex = pairStartIndex + prevSum;
                     if (storeAsSinglePair && pairIndex+interactCount <= maxSinglePairs) {
                         while (interacts != 0) {
-                            int j = __TILEFLAGS_FFS(interacts)-1;
+                            int j = __ffs(interacts)-1;
                             singlePairs[pairIndex] = make_int2(atom2, x*TILE_SIZE+j);
                             interacts = interacts ^ (static_cast<tileflags>(1) << j);
                             pairIndex++;
                         }
                     }
                 }
+    #else
+                const unsigned int interactCount = interacts;
     #endif
 
                 // Add any interacting atoms to the buffer.
 
-                tileflags includeAtomFlags = BALLOT(interactCount > MAX_BITS_FOR_PAIRS);
+                warpflags includeAtomFlags = __ballot(interactCount > MAX_BITS_FOR_PAIRS);
                 if (interactCount > MAX_BITS_FOR_PAIRS) {
-                    int index = neighborsInBuffer+__TILEFLAGS_POPC(includeAtomFlags&warpMask);
+                    int index = neighborsInBuffer+warpPopc(includeAtomFlags&warpMask);
                     buffer[index] = atom2;
                 }
-                neighborsInBuffer += __TILEFLAGS_POPC(includeAtomFlags);
-                if (neighborsInBuffer > BUFFER_SIZE-TILE_SIZE) {
+                neighborsInBuffer += warpPopc(includeAtomFlags);
+                if (neighborsInBuffer > BUFFER_SIZE-warpSize) {
                     // Store the new tiles to memory.
 
-                    unsigned int tilesToStore = neighborsInBuffer/TILE_SIZE;
+                    unsigned int tilesToStore = neighborsInBuffer/warpSize*tilesPerWarp;
                     unsigned int tileStartIndex = 0;
                     if (indexInWarp == 0)
                         tileStartIndex = atomicAdd(&interactionCount[0], tilesToStore);
-                    unsigned int newTileStartIndex = SHFL(tileStartIndex, 0);
+                    unsigned int newTileStartIndex = __shfl(tileStartIndex, 0);
                     if (newTileStartIndex+tilesToStore <= maxTiles) {
                         if (indexInWarp < tilesToStore)
                             interactingTiles[newTileStartIndex+indexInWarp] = x;
-                        for (int j = 0; j < tilesToStore; j++)
-                            interactingAtoms[newTileStartIndex*TILE_SIZE+j*TILE_SIZE+indexInWarp] = buffer[j*TILE_SIZE+indexInWarp];
+                        for (int j = 0; j < tilesToStore/tilesPerWarp; j++)
+                            interactingAtoms[newTileStartIndex*TILE_SIZE+j*warpSize+indexInWarp] = buffer[j*warpSize+indexInWarp];
                     }
                     if (indexInWarp+TILE_SIZE*tilesToStore < BUFFER_SIZE)
                         buffer[indexInWarp] = buffer[indexInWarp+TILE_SIZE*tilesToStore];
                     neighborsInBuffer -= TILE_SIZE*tilesToStore;
                 }
             }
+
+            // Move not processed blocks to the head of block2Buffer.
+            if (indexInWarp < block2Count - block2ToProcess)
+                block2Buffer[indexInWarp] = block2Buffer[block2ToProcess + indexInWarp];
+            block2Count = block2Count - block2ToProcess;
         }
 
         // If we have a partially filled buffer,  store it to memory.
@@ -491,12 +501,14 @@ extern "C" __global__ void findBlocksWithInteractions(real4 periodicBoxSize, rea
             unsigned int tileStartIndex = 0;
             if (indexInWarp == 0)
                 tileStartIndex = atomicAdd(&interactionCount[0], tilesToStore);
-            unsigned int newTileStartIndex = SHFL(tileStartIndex, 0);
+            unsigned int newTileStartIndex = __shfl(tileStartIndex, 0);
             if (newTileStartIndex+tilesToStore <= maxTiles) {
                 if (indexInWarp < tilesToStore)
                     interactingTiles[newTileStartIndex+indexInWarp] = x;
-                for (int j = 0; j < tilesToStore; j++)
-                    interactingAtoms[newTileStartIndex*TILE_SIZE+j*TILE_SIZE+indexInWarp] = (j*TILE_SIZE+indexInWarp < neighborsInBuffer ? buffer[j*TILE_SIZE+indexInWarp] : PADDED_NUM_ATOMS);
+                for (int j = 0; j <= tilesToStore/tilesPerWarp; j++) {
+                    if (j*warpSize+indexInWarp < tilesToStore*TILE_SIZE)
+                        interactingAtoms[newTileStartIndex*TILE_SIZE+j*warpSize+indexInWarp] = (j*warpSize+indexInWarp < neighborsInBuffer ? buffer[j*warpSize+indexInWarp] : PADDED_NUM_ATOMS);
+                }
             }
         }
     }

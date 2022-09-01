@@ -23,6 +23,8 @@ INCLUDE_DIRECTORIES(${OPENMM_DIR}/include)
 INCLUDE_DIRECTORIES(${OPENMM_DIR}/include/openmm/reference)
 LINK_DIRECTORIES("${OPENMM_DIR}/lib" "${OPENMM_DIR}/lib/plugins")
 
+SET(PTHREADS_LIB pthread)
+
 # Specify the C++ version we are building for.
 SET(CMAKE_CXX_STANDARD 11)
 
@@ -69,9 +71,6 @@ ENDIF(${CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT})
 SET(OPENMM_BUILD_SHARED_LIB ON CACHE BOOL "Whether to build shared OpenMM libraries")
 SET(OPENMM_BUILD_STATIC_LIB OFF CACHE BOOL "Whether to build static OpenMM libraries")
 
-# We have custom cmake modules for FindMMHIP
-SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
-
 SET(OPENMM_LIBRARY_NAME OpenMM)
 
 IF(NOT EXECUTABLE_OUTPUT_PATH)
@@ -80,7 +79,7 @@ IF(NOT EXECUTABLE_OUTPUT_PATH)
 ENDIF(NOT EXECUTABLE_OUTPUT_PATH)
 
 # Include OpenMM utiliity libraries
-SET(OPENMM_LIB_SUBDIRS libraries/jama libraries/quern libraries/hilbert libraries/csha1 libraries/lbfgs)
+SET(OPENMM_LIB_SUBDIRS libraries/jama libraries/quern libraries/hilbert libraries/csha1 libraries/lbfgs libraries/pocketfft)
 FOREACH(subdir ${OPENMM_LIB_SUBDIRS})
     INCLUDE_DIRECTORIES(BEFORE ${OPENMM_SOURCE_DIR}/${subdir}/include)
 ENDFOREACH(subdir)

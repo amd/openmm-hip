@@ -62,6 +62,8 @@
 #include "openmm/common/ComputeContext.h"
 #include "openmm/Kernel.h"
 
+typedef unsigned int tileflags;
+
 namespace OpenMM {
 
 /**
@@ -83,6 +85,7 @@ public:
     class ForcePreComputation;
     class ForcePostComputation;
     static const int ThreadBlockSize;
+    static const int TileSize;
     HipContext(const System& system, int deviceIndex, bool useBlockingSync, const std::string& precision,
             const std::string& compiler, const std::string& tempDir, const std::string& hostCompiler, bool allowRuntimeCompiler,
             HipPlatform::PlatformData& platformData, HipContext* originalContext);
@@ -358,7 +361,7 @@ public:
      */
     double reduceEnergy();
     /**
-     * Get the number of blocks of tileSize atoms.
+     * Get the number of blocks of TileSize atoms.
      */
     int getNumAtomBlocks() const {
         return numAtomBlocks;
@@ -381,12 +384,6 @@ public:
      */
     bool getIsCPU() const {
         return false;
-    }
-    /**
-     * Get the tile size used for nonbonded interactions.
-     */
-    int getTileSize() const {
-        return tileSize;
     }
     /**
      * Get the SIMD width of the device being used.
@@ -580,6 +577,10 @@ public:
      * expense of reduced simulation performance.
      */
     void flushQueue();
+    /**
+     * Get the flags that should be used when creating hipEvent_t objects.
+     */
+    unsigned int getEventFlags();
 private:
     /**
      * Compute a sorted list of device indices in decreasing order of desirability
@@ -593,7 +594,6 @@ private:
     int numAtomBlocks;
     int numThreadBlocks;
     int simdWidth;
-    int tileSize;
     int sharedMemPerBlock;
     bool supportsHardwareFloatGlobalAtomicAdd;
     bool useBlockingSync, useDoublePrecision, useMixedPrecision, contextIsValid, boxIsTriclinic, hasCompilerKernel, isHipccAvailable, hasAssignedPosqCharges;

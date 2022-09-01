@@ -75,6 +75,7 @@ using namespace OpenMM;
 using namespace std;
 
 const int HipContext::ThreadBlockSize = 64;
+const int HipContext::TileSize = sizeof(tileflags)*8;
 bool HipContext::hasInitializedHip = false;
 
 
@@ -82,7 +83,7 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
         const string& tempDir, const std::string& hostCompiler, bool allowRuntimeCompiler, HipPlatform::PlatformData& platformData,
         HipContext* originalContext) : ComputeContext(system), currentStream(0), platformData(platformData), contextIsValid(false), hasAssignedPosqCharges(false),
         hasCompilerKernel(false), isHipccAvailable(false), pinnedBuffer(NULL), integration(NULL), expression(NULL), bonded(NULL), nonbonded(NULL),
-        fftBackend(0), supportsHardwareFloatGlobalAtomicAdd(false) {
+        useBlockingSync(useBlockingSync), fftBackend(0), supportsHardwareFloatGlobalAtomicAdd(false) {
     // Determine what compiler to use.
 
     this->compiler = "\""+compiler+"\"";
@@ -175,9 +176,6 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
 
     // set device properties
     this->simdWidth = props.warpSize;
-    char* forceTileSize32Env = getenv("OPENMM_FORCE_TILE_SIZE_32");
-    bool forceTileSize32 = (forceTileSize32Env != NULL && string(forceTileSize32Env) == "1");
-    this->tileSize = forceTileSize32 ? 32 : simdWidth;
     this->sharedMemPerBlock = props.sharedMemPerBlock;
 
     gpuArchitecture = props.gcnArchName;
@@ -185,8 +183,9 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     int numThreadBlocksPerComputeUnit = 6;
 
     if (gpuArchitecture.find("gfx908") == 0 ||
-        gpuArchitecture.find("gfx90a") == 0) {
-        // MI100 and MI200 support 32 bit float atomic add
+        gpuArchitecture.find("gfx90a") == 0 ||
+        gpuArchitecture.find("gfx940") == 0) {
+        // MI100 and newer CDNA support 32 bit float atomic add
         this->supportsHardwareFloatGlobalAtomicAdd = true;
     }
 
@@ -212,8 +211,8 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
         }
     }
     numAtoms = system.getNumParticles();
-    paddedNumAtoms = tileSize*((numAtoms+tileSize-1)/tileSize);
-    numAtomBlocks = (paddedNumAtoms+(tileSize-1))/tileSize;
+    paddedNumAtoms = TileSize*((numAtoms+TileSize-1)/TileSize);
+    numAtomBlocks = (paddedNumAtoms+(TileSize-1))/TileSize;
     int multiprocessors;
     CHECK_RESULT(hipDeviceGetAttribute(&multiprocessors, hipDeviceAttributeMultiprocessorCount, device));
     numThreadBlocks = numThreadBlocksPerComputeUnit*multiprocessors;
@@ -222,9 +221,6 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     if (simdWidth == 32)
         compilationDefines["AMD_RDNA"] = "";
     compilationDefines["ENABLE_SHUFFLE"] = "1";
-    compilationDefines["LOAD_TEMP_ATOM"] = "data = LDATA(tbx+j);";
-    compilationDefines["BROADCAST_WARP_ATOM"] = "LDATA(tbx+j) = warpShuffle<TILE_SIZE>(data, j);";
-    compilationDefines["SHUFFLE_WARP_ATOM"] = "LDATA(tgx) = warpRotateLeft<TILE_SIZE>(LDATA(tgx));";
     if (useDoublePrecision) {
         posq.initialize<double4>(*this, paddedNumAtoms, "posq");
         velm.initialize<double4>(*this, paddedNumAtoms, "velm");
@@ -484,13 +480,10 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     bool saveTemps = saveTempsEnv != nullptr;
     string bits = intToString(8*sizeof(void*));
     string options = "-ffast-math -munsafe-fp-atomics -Wall";
-    // Disable packed math for >=MI200 as it affects performance of some kernels
-    options += " -fno-slp-vectorize -fno-vectorize";
-    // HIP-TODO: DPP instructions in nonbonded.hip can cause a compiler crash in 'GCN DPP Combine' pass.
-    // Disabling this pass should not affect performance because there are no cases where
-    // instructions like v_mov_dpp and v_add_f32 can be combined into one v_add_f32_dpp.
-    // Remove -mllvm -amdgpu-dpp-combine=false when the compiler issue is fixed.
-    options += " -mllvm -amdgpu-dpp-combine=false";
+    // HIP-TODO: Remove it when the compiler does a better job
+    // Disable SLP vectorization as it may generate unoptimal packed math instructions on >=MI200
+    // (gfx90a): more v_mov, higher register usage etc.
+    options += " -fno-slp-vectorize";
     if (getMaxThreadBlockSize() < 1024) {
         options += " --gpu-max-threads-per-block=" + std::to_string(getMaxThreadBlockSize());
     }
@@ -541,15 +534,7 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
         src << "typedef float3 mixed3;\n";
         src << "typedef float4 mixed4;\n";
     }
-    if (tileSize > 32) {
-        src << "typedef unsigned long long tileflags;\n";
-        src << "typedef ulong2 tileflags2;\n";
-    }
-    else {
-        src << "typedef unsigned int tileflags;\n";
-        src << "typedef uint2 tileflags2;\n";
-    }
-    src << "static_assert(sizeof(tileflags)*8==" << tileSize << ",\"tileflags size does not match TILE_SIZE\");\n";
+    src << "typedef unsigned int tileflags;\n";
     src << HipKernelSources::common << endl;
     for (auto& pair : defines) {
         src << "#define " << pair.first;
@@ -928,4 +913,11 @@ vector<int> HipContext::getDevicePrecedence() {
     }
 
     return precedence;
+}
+
+unsigned int HipContext::getEventFlags() {
+    unsigned int flags = hipEventDisableTiming;
+    if (useBlockingSync)
+        flags += hipEventBlockingSync;
+    return flags;
 }
