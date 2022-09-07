@@ -355,7 +355,7 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
     if (fftBackendVariable != NULL)
         stringstream(fftBackendVariable) >> fftBackend;
     else
-        fftBackend = 1; // Use hipFFT by default
+        fftBackend = 2; // Use VkFFT by default
 
     // Create utilities objects.
 
