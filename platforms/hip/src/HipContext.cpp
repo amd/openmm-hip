@@ -471,6 +471,33 @@ void HipContext::popAsCurrent() {
     }
 }
 
+string HipContext::getTempFileName() const {
+    stringstream tempFileName;
+    tempFileName << tempDir;
+    tempFileName << "openmmTempKernel" << this; // Include a pointer to this context as part of the filename to avoid collisions.
+    tempFileName << "_" << getpid();
+    return tempFileName.str();
+}
+
+string HipContext::getHash(const string& src) const {
+    CSHA1 sha1;
+    sha1.Update((const UINT_8*) src.c_str(), src.size());
+    sha1.Final();
+    UINT_8 hash[20];
+    sha1.GetHash(hash);
+    stringstream cacheHash;
+    cacheHash.flags(ios::hex);
+    for (int i = 0; i < 20; i++)
+        cacheHash << setw(2) << setfill('0') << (int) hash[i];
+    return cacheHash.str();
+}
+
+string HipContext::getCacheFileName(const string& src) const {
+    stringstream cacheFile;
+    cacheFile << cacheDir << getHash(src) << '_' << gpuArchitecture;
+    return cacheFile.str();
+}
+
 hipModule_t HipContext::createModule(const string source) {
     return createModule(source, map<string, string>());
 }
@@ -478,7 +505,6 @@ hipModule_t HipContext::createModule(const string source) {
 hipModule_t HipContext::createModule(const string source, const map<string, string>& defines) {
     const char* saveTempsEnv = getenv("OPENMM_SAVE_TEMPS");
     bool saveTemps = saveTempsEnv != nullptr;
-    string bits = intToString(8*sizeof(void*));
     string options = "-ffast-math -munsafe-fp-atomics -Wall";
     // HIP-TODO: Remove it when the compiler does a better job
     // Disable SLP vectorization as it may generate unoptimal packed math instructions on >=MI200
@@ -490,6 +516,9 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
     stringstream src;
     if (!options.empty())
         src << "// Compilation Options: " << options << endl << endl;
+    int runtimeVersion;
+    CHECK_RESULT2(hipRuntimeGetVersion(&runtimeVersion), "Error getting HIP runtime version");
+    src << "// HIP Runtime Version: " << runtimeVersion << endl << endl;
     for (auto& pair : compilationDefines) {
         // Query defines to avoid duplicate variables
         if (defines.find(pair.first) == defines.end()) {
@@ -549,19 +578,9 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
 
     // See whether we already have PTX for this kernel cached.
 
-    CSHA1 sha1;
-    sha1.Update((const UINT_8*) src.str().c_str(), src.str().size());
-    sha1.Final();
-    UINT_8 hash[20];
-    sha1.GetHash(hash);
-    stringstream cacheHash;
-    cacheHash.flags(ios::hex);
-    for (int i = 0; i < 20; i++)
-        cacheHash << setw(2) << setfill('0') << (int) hash[i];
-    stringstream cacheFile;
-    cacheFile << cacheDir << cacheHash.str() << '_' << gpuArchitecture << '_' << bits;
+    string cacheFile = getCacheFileName(src.str());
     hipModule_t module;
-    if (hipModuleLoad(&module, cacheFile.str().c_str()) == hipSuccess) {
+    if (hipModuleLoad(&module, cacheFile.c_str()) == hipSuccess) {
         loadedModules.push_back(module);
         return module;
     }
@@ -575,12 +594,10 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
         if (saveTempsPrefixEnv) {
             tempFileName << saveTempsPrefixEnv;
         }
-        tempFileName << cacheHash.str();
+        tempFileName << getHash(src.str());
     }
     else {
-        tempFileName << tempDir;
-        tempFileName << "openmmTempKernel" << this; // Include a pointer to this context as part of the filename to avoid collisions.
-        tempFileName << "_" << getpid();
+        tempFileName << getTempFileName();
     }
     string inputFile = (tempFileName.str()+".hip.cpp");
     string outputFile = (tempFileName.str()+".hsaco");
@@ -648,7 +665,7 @@ hipModule_t HipContext::createModule(const string source, const map<string, stri
             remove(inputFile.c_str());
             remove(logFile.c_str());
         }
-        if (rename(outputFile.c_str(), cacheFile.str().c_str()) != 0 && !saveTemps)
+        if (rename(outputFile.c_str(), cacheFile.c_str()) != 0 && !saveTemps)
             remove(outputFile.c_str());
         loadedModules.push_back(module);
         return module;
