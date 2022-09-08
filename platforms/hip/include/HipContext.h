@@ -284,6 +284,18 @@ public:
         return atomIndexDevice;
     }
     /**
+     * Get a file name in tempDir unique for the current process and context.
+     */
+    std::string getTempFileName() const;
+    /**
+     * Get src hash.
+     */
+    std::string getHash(const std::string& src) const;
+    /**
+     * Get a filename in cacheDir based on src hash.
+     */
+    std::string getCacheFileName(const std::string& src) const;
+    /**
      * Create a HIP module from source code.
      *
      * @param source             the source code of the module

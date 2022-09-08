@@ -120,15 +120,13 @@ a chance).
 
 ### FFT backends
 
-There are 3 implementations (backends) of FFT, the default is hipFFT/rocFFT.  It is known that
-rocFFT from ROCm 4.2 and earlier has correctness issues.  If some tests fail or you suspect that
-your simulation with PME produces incorrect results, please try different backends:
+There are 3 implementations (backends) of FFT, the default is VkFFT.
+If some tests fail or you suspect that your simulation with PME produces incorrect results,
+please try different backends:
 
-* the VkFFT-based implementation (`export OPENMM_FFT_BACKEND=2`), this backend is on par with
-  hipFFT/rocFFT, some FFT sizes are faster, some are slower;
-* the built-in FFT implementation (`export OPENMM_FFT_BACKEND=0`), it may be faster for small
-  simulations with small FFT sizes;
-* the hipFFT/rocFFT-based implementation (`export OPENMM_FFT_BACKEND=1`) - default.
+* the built-in FFT implementation (`export OPENMM_FFT_BACKEND=0`).
+* the hipFFT/rocFFT-based implementation (`export OPENMM_FFT_BACKEND=1`);
+* the VkFFT-based implementation (`export OPENMM_FFT_BACKEND=2`);
 
 ### The kernel compilation: hipcc and hipRTC
 

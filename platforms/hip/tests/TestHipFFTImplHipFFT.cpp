@@ -131,11 +131,17 @@ int main(int argc, char* argv[]) {
             testTransform<double2>(true, 25, 28, 25);
             testTransform<double2>(true, 25, 25, 28);
             testTransform<double2>(true, 21, 25, 27);
-            testTransform<double2>(true, 49, 98, 14); // Fails on ROCm 4.3
+            testTransform<double2>(true, 49, 98, 14);
             testTransform<double2>(true, 7, 21, 98);
             testTransform<double2>(true, 98, 21, 21);
-            testTransform<double2>(true, 18, 98, 6); // Fails on ROCm 4.3
-            testTransform<double2>(true, 98, 98, 98, 1e+1); // Fails on ROCm 4.3
+            testTransform<double2>(true, 18, 98, 6);
+            testTransform<double2>(true, 50, 50, 50);
+            testTransform<double2>(true, 60, 60, 60);
+            testTransform<double2>(false, 64, 64, 64);
+            testTransform<double2>(true, 100, 100, 100);
+            testTransform<double2>(true, 243, 120, 120);
+            testTransform<double2>(true, 216, 216, 216);
+            testTransform<double2>(true, 98, 98, 98, 1e+1); // Fails on ROCm 5.2
         }
         else {
             testTransform<float2>(false, 28, 25, 30);
@@ -147,7 +153,13 @@ int main(int argc, char* argv[]) {
             testTransform<float2>(true, 7, 21, 98);
             testTransform<float2>(true, 98, 21, 21);
             testTransform<float2>(true, 18, 98, 6);
-            testTransform<float2>(true, 98, 98, 98, 1e+1); // Fails on ROCm 4.3
+            testTransform<float2>(true, 50, 50, 50);
+            testTransform<float2>(true, 60, 60, 60);
+            testTransform<float2>(false, 64, 64, 64);
+            testTransform<float2>(true, 100, 100, 100);
+            testTransform<float2>(true, 243, 120, 120, 1e+1);
+            testTransform<float2>(true, 216, 216, 216, 2e+1);
+            testTransform<float2>(true, 98, 98, 98, 1e+1); // Fails on ROCm 5.2
         }
     }
     catch(const exception& e) {

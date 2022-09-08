@@ -27,6 +27,10 @@
 
 #include "HipFFTImplVkFFT.h"
 #include "HipContext.h"
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <iterator>
 
 using namespace OpenMM;
 using namespace std;
@@ -43,7 +47,6 @@ HipFFTImplVkFFT::HipFFTImplVkFFT(HipContext& context, int xsize, int ysize, int 
     else {
         outputBufferSize = zsize * ysize * xsize * valueSize;
     }
-
 
     VkFFTConfiguration configuration = {};
     configuration.performR2C = realToComplex;
@@ -71,10 +74,55 @@ HipFFTImplVkFFT::HipFFTImplVkFFT(HipContext& context, int xsize, int ysize, int 
     configuration.bufferStride[1] = configuration.bufferStride[0] * ysize;
     configuration.bufferStride[2] = configuration.bufferStride[1] * xsize;
 
+    // Combine all parameters into a unique key
+    stringstream info;
+    int runtimeVersion;
+    (void)hipRuntimeGetVersion(&runtimeVersion);
+    info << runtimeVersion;
+    info << " " << VkFFTGetVersion();
+    info << " " << xsize << " " << ysize << " " << zsize;
+    info << " " << realToComplex << " " << context.getUseDoublePrecision();
+
+    string cacheFile = context.getCacheFileName(info.str());
+
+    bool hasCache = false;
+    vector<char> cacheContent;
+
+    ifstream cache(cacheFile.c_str(), ios::in | ios::binary);
+    if (cache.is_open()) {
+        cacheContent.insert(cacheContent.begin(), istreambuf_iterator<char>(cache), istreambuf_iterator<char>());
+        cache.close();
+        hasCache = true;
+        // There is an existing cache, load VkFFT kernels from it
+        configuration.loadApplicationFromString = 1;
+        configuration.loadApplicationString = cacheContent.data();
+    }
+    else {
+        // There is no existing cache, request saving
+        configuration.saveApplicationToString = 1;
+    }
+
     app = new VkFFTApplication();
     VkFFTResult fftResult = initializeVkFFT(app, configuration);
     if (fftResult != VKFFT_SUCCESS) {
         throw OpenMMException("Error executing VkFFT: "+context.intToString(fftResult));
+    }
+
+    if (!hasCache) {
+        // There is no existing cache, create it
+        string outputFile = context.getTempFileName() + ".vkfftcache";
+        try {
+            ofstream out(outputFile.c_str(), ios::out | ios::binary);
+            out.write(reinterpret_cast<char*>(app->saveApplicationString), size_t(app->applicationStringSize));
+            out.close();
+            if (!out.fail()) {
+                if (rename(outputFile.c_str(), cacheFile.c_str()) != 0)
+                    remove(outputFile.c_str());
+            }
+        }
+        catch (...) {
+            // An error occurred.  Possibly we don't have permission to write to the temp directory.
+        }
     }
 }
 
