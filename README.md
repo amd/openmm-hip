@@ -12,12 +12,13 @@ apt install hipfft
 ```
 
 ```sh
-conda create -n openmm-env -c streamhpc -c conda-forge openmm-hip
+conda create -n openmm-env -c streamhpc -c conda-forge/label/openmm_rc -c conda-forge openmm-hip
 conda activate openmm-env
 ```
 
 This command creates a new environment, installs OpenMM and the plugin and activates the new
-environment.
+environment. A label `openmm_rc` is required because the current release version of the OpenMM
+package (7.7) does not support the HIP plugin.
 
 Verify your installation (HIP must be one of available platforms):
 
