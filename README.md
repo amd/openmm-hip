@@ -5,10 +5,10 @@ AMD GPUs on [AMD ROCm™ open software platform](https://rocmdocs.amd.com).
 
 ## Installing with Conda
 
-This plugin requires hipFFT, install it from ROCm repositories:
+This plugin requires hipFFT and rocFFT, install them from ROCm repositories:
 
 ```sh
-apt install hipfft
+apt install hipfft rocfft
 ```
 
 ```sh
