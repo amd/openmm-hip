@@ -191,8 +191,6 @@ HipContext::HipContext(const System& system, int deviceIndex, bool useBlockingSy
 
     contextIsValid = true;
     ContextSelector selector(*this);
-    // note: this is a no-op on AMD GPUs
-    CHECK_RESULT(hipDeviceSetCacheConfig(hipFuncCachePreferShared));
     if (contextIndex > 0) {
         int canAccess;
         CHECK_RESULT(hipDeviceCanAccessPeer(&canAccess, getDevice(), platformData.contexts[0]->getDevice()));
