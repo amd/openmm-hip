@@ -426,6 +426,7 @@ void HipUpdateStateDataKernel::loadCheckpoint(ContextImpl& context, istream& str
     SimTKOpenMMUtilities::loadCheckpoint(stream);
     for (auto listener : cu.getReorderListeners())
         listener->execute();
+    cu.validateAtomOrder();
 }
 
 class HipCalcNonbondedForceKernel::ForceInfo : public HipForceInfo {

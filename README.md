@@ -5,19 +5,30 @@ AMD GPUs on [AMD ROCm™ open software platform](https://rocmdocs.amd.com).
 
 ## Installing with Conda
 
-This plugin requires hipFFT, install it from ROCm repositories:
+This plugin requires hipFFT and rocFFT, install them from ROCm repositories:
 
 ```sh
-apt install hipfft
+apt install hipfft rocfft
 ```
 
 ```sh
-conda create -n openmm-env -c streamhpc -c conda-forge openmm-hip
+conda create -n openmm-env -c streamhpc -c conda-forge/label/openmm_rc -c conda-forge --strict-channel-priority openmm-hip
 conda activate openmm-env
 ```
 
 This command creates a new environment, installs OpenMM and the plugin and activates the new
-environment.
+environment. A label `openmm_rc` is required because the current release version of the OpenMM
+package (7.7) does not support the HIP plugin.
+
+**Note:** `cudatoolkit` is a large (about 1 GB) dependency of `openmm` package, however it is not
+required for the HIP plugin. It is possible to install a tiny "shim" package instead (for more
+information see
+[this comment](https://github.com/openmm/openmm/issues/3059#issuecomment-891653746)):
+
+```sh
+conda create -n openmm-env -c jaimergp/label/unsupported-cudatoolkit-shim -c streamhpc -c conda-forge/label/openmm_rc -c conda-forge --strict-channel-priority openmm-hip
+conda activate openmm-env
+```
 
 Verify your installation (HIP must be one of available platforms):
 
@@ -98,7 +109,7 @@ make install
 make PythonInstall
 cd ..
 
-git clone https://github.com/StreamHPC/openmm-hip.git
+git clone https://github.com/amd/openmm-hip.git
 cd build-hip
 cmake ../openmm-hip/ -D OPENMM_DIR=../install -D OPENMM_SOURCE_DIR=../openmm -D CMAKE_INSTALL_PREFIX=../install
 make
