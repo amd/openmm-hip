@@ -109,7 +109,7 @@ make install
 make PythonInstall
 cd ..
 
-git clone https://github.com/StreamHPC/openmm-hip.git
+git clone https://github.com/amd/openmm-hip.git
 cd build-hip
 cmake ../openmm-hip/ -D OPENMM_DIR=../install -D OPENMM_SOURCE_DIR=../openmm -D CMAKE_INSTALL_PREFIX=../install
 make
